@@ -1,8 +1,8 @@
 {
   "name": "korda-studio",
-  "productName": "korda-studio",
+  "productName": "KORDA Studio",
   "version": "1.0.0",
-  "description": "My Electron application description",
+  "description": "Unified engineering operations platform for KORDA",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {

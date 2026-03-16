@@ -13,7 +13,11 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({
+      name: 'KordaStudio',
+      setupExe: 'KordaStudio-Setup.exe',
+      setupIcon: './assets/korda-studio.ico',
+    }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),
     new MakerDeb({}),
