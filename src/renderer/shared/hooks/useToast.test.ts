@@ -1,6 +1,6 @@
 import { useToastStore } from '../state/toastStore'
 
-describe('toastStore', () => {
+describe('useToastStore', () => {
   beforeEach(() => {
     useToastStore.setState({ toasts: [] })
   })
