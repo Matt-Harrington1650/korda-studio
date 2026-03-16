@@ -59,6 +59,7 @@ export function StatusStrip({ onBellRect }: StatusStripProps) {
       <div className="flex items-center gap-3">
         {/* Connection status */}
         <button
+          aria-label="View system status"
           onClick={() => navigate('/status')}
           className="flex items-center gap-1.5 hover:text-text-primary transition-colors"
         >

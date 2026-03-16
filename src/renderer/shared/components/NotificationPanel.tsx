@@ -23,7 +23,7 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 function NotificationRow({ notification }: { notification: AppNotification }) {
-  const { markRead } = useNotificationStore()
+  const markRead = useNotificationStore((s) => s.markRead)
   const Icon = icons[notification.type]
 
   return (
