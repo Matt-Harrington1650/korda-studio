@@ -1,15 +1,21 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "module": "commonjs",
-    "allowJs": true,
-    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
     "esModuleInterop": true,
-    "noImplicitAny": true,
-    "sourceMap": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "outDir": "./dist",
     "baseUrl": ".",
-    "outDir": "dist",
-    "moduleResolution": "node",
-    "resolveJsonModule": true
-  }
+    "paths": {
+      "@shared/*": ["src/renderer/shared/*"],
+      "@modules/*": ["src/renderer/modules/*"]
+    }
+  },
+  "include": ["src/**/*"]
 }
