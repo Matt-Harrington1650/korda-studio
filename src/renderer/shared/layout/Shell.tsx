@@ -6,6 +6,7 @@ import { StatusStrip } from './StatusStrip'
 import { ModuleErrorBoundary } from './ErrorBoundary'
 import { CommandPalette } from './CommandPalette'
 import { useCommandPaletteShortcut } from '@shared/hooks/useCommandPalette'
+import { ToastContainer } from '@shared/components/Toast'
 import { sidebarModules, modules } from '../../moduleRegistry'
 
 function useActiveModuleName(): string {
@@ -43,6 +44,7 @@ export function Shell() {
         </div>
       </div>
       <CommandPalette />
+      <ToastContainer />
     </div>
   )
 }

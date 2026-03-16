@@ -4,12 +4,14 @@ import { usePreferencesStore } from '@shared/state/preferencesStore'
 import type { Bookmark } from '@shared/state/preferencesStore'
 import { BookmarkForm } from './components/BookmarkForm'
 import { BookmarkList } from './components/BookmarkList'
+import { useToast } from '@shared/hooks/useToast'
 
 export default function BookmarksModule() {
   const { bookmarks, addBookmark, updateBookmark, removeBookmark } = usePreferencesStore()
   const [showForm, setShowForm] = useState(false)
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const { toast } = useToast()
 
   const filtered = useMemo(() => {
     if (!searchQuery) return bookmarks
@@ -30,6 +32,7 @@ export default function BookmarksModule() {
     } else {
       addBookmark({ ...data, id: crypto.randomUUID() })
     }
+    toast({ title: 'Bookmark saved', type: 'success' })
     setShowForm(false)
   }
 
