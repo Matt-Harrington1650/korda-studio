@@ -64,18 +64,20 @@ ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, (_event, url: string) => {
 ipcMain.handle(IPC_CHANNELS.WINDOW_GET_STATE, () => null)
 ipcMain.handle(IPC_CHANNELS.WINDOW_SAVE_STATE, () => undefined)
 
-session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-  callback({
-    responseHeaders: {
-      ...details.responseHeaders,
-      'Content-Security-Policy': [
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'",
-      ],
-    },
+app.whenReady().then(() => {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'",
+        ],
+      },
+    })
   })
-})
 
-app.whenReady().then(createWindow)
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
