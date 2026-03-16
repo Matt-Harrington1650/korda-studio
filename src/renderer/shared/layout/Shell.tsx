@@ -4,6 +4,8 @@ import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
 import { StatusStrip } from './StatusStrip'
 import { ModuleErrorBoundary } from './ErrorBoundary'
+import { CommandPalette } from './CommandPalette'
+import { useCommandPaletteShortcut } from '@shared/hooks/useCommandPalette'
 import { sidebarModules, modules } from '../../moduleRegistry'
 
 function useActiveModuleName(): string {
@@ -16,6 +18,7 @@ function useActiveModuleName(): string {
 
 export function Shell() {
   const moduleName = useActiveModuleName()
+  useCommandPaletteShortcut()
 
   return (
     <div className="h-screen flex flex-col bg-surface-base text-text-primary overflow-hidden">
@@ -39,6 +42,7 @@ export function Shell() {
           <StatusStrip />
         </div>
       </div>
+      <CommandPalette />
     </div>
   )
 }
