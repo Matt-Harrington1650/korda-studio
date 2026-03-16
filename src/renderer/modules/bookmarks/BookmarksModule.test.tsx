@@ -2,8 +2,12 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import BookmarksModule from './BookmarksModule'
 import { usePreferencesStore } from '@shared/state/preferencesStore'
 
-// Mock openExternal since window.kordaAPI is not available in tests
-vi.stubGlobal('kordaAPI', { openExternal: vi.fn() })
+// Mock openExternal and store methods since window.kordaAPI is not available in tests
+vi.stubGlobal('kordaAPI', {
+  openExternal: vi.fn(),
+  storeGet: vi.fn().mockResolvedValue(null),
+  storeSet: vi.fn(),
+})
 
 describe('BookmarksModule', () => {
   beforeEach(() => {

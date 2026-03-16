@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { devtools, persist } from 'zustand/middleware'
+import { devtools, persist, createJSONStorage } from 'zustand/middleware'
+import { createElectronStorage } from '@shared/electronStorage'
 
 export interface Bookmark {
   id: string
@@ -39,7 +40,10 @@ export const usePreferencesStore = create<PreferencesState>()(
             bookmarks: state.bookmarks.filter((b) => b.id !== id),
           })),
       }),
-      { name: 'korda-preferences' },
+      {
+        name: 'korda-preferences',
+        storage: createJSONStorage(() => createElectronStorage('preferences')),
+      },
     ),
   ),
 )

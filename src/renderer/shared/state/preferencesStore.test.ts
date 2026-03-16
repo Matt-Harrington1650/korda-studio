@@ -1,7 +1,12 @@
 import { usePreferencesStore } from './preferencesStore'
+import { vi } from 'vitest'
 
 describe('preferencesStore', () => {
   beforeEach(() => {
+    vi.stubGlobal('kordaAPI', {
+      storeGet: vi.fn().mockResolvedValue(null),
+      storeSet: vi.fn(),
+    })
     usePreferencesStore.setState({
       displayName: '',
       sidebarCollapsed: false,
