@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from 'react-router'
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
 import { StatusStrip } from './StatusStrip'
@@ -7,6 +7,7 @@ import { ModuleErrorBoundary } from './ErrorBoundary'
 import { CommandPalette } from './CommandPalette'
 import { useCommandPaletteShortcut } from '@shared/hooks/useCommandPalette'
 import { ToastContainer } from '@shared/components/Toast'
+import { NotificationPanel } from '@shared/components/NotificationPanel'
 import { sidebarModules, modules } from '../../moduleRegistry'
 
 function useActiveModuleName(): string {
@@ -19,6 +20,7 @@ function useActiveModuleName(): string {
 
 export function Shell() {
   const moduleName = useActiveModuleName()
+  const [bellRect, setBellRect] = useState<DOMRect | null>(null)
   useCommandPaletteShortcut()
 
   return (
@@ -40,11 +42,12 @@ export function Shell() {
               </Suspense>
             </ModuleErrorBoundary>
           </main>
-          <StatusStrip />
+          <StatusStrip onBellRect={setBellRect} />
         </div>
       </div>
       <CommandPalette />
       <ToastContainer />
+      <NotificationPanel bellRect={bellRect} />
     </div>
   )
 }
