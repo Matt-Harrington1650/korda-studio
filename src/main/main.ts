@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, session, shell } from 'electron'
 import path from 'path'
 import { IPC_CHANNELS } from '../shared/ipc-types'
 
@@ -29,7 +29,7 @@ async function initStore(): Promise<void> {
 
 function getDefaultWindowBounds() {
   const { width: screenWidth, height: screenHeight } =
-    require('electron').screen.getPrimaryDisplay().workAreaSize
+    screen.getPrimaryDisplay().workAreaSize
   return {
     width: 1280,
     height: 800,
@@ -46,7 +46,6 @@ function getSavedWindowBounds() {
 
   // Guard: validate the saved position overlaps at least one connected display's workArea.
   // Uses overlap (not full-containment) to handle windows that span multiple monitors.
-  const { screen } = require('electron')
   const displays = screen.getAllDisplays()
   const isOnScreen = displays.some((display: Electron.Display) => {
     const { x, y, width, height } = display.workArea
@@ -109,9 +108,9 @@ function createWindow() {
   // Save window state on close
   mainWindow.on('close', () => {
     if (mainWindow && store) {
-      const bounds = mainWindow.getBounds()
+      const closeBounds = mainWindow.getBounds()
       store.set('window-state', {
-        ...bounds,
+        ...closeBounds,
         isMaximized: mainWindow.isMaximized(),
       })
     }
