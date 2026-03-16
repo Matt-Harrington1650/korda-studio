@@ -27,4 +27,5 @@ export const IPC_CHANNELS = {
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_CLOSE: 'window:close',
   OPEN_EXTERNAL: 'shell:open-external',
+  NOTIFICATION_PUSH: 'notification:push',
 } as const

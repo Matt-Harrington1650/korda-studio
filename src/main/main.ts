@@ -24,18 +24,6 @@ function createWindow() {
     },
   })
 
-  // Set CSP
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'",
-        ],
-      },
-    })
-  })
-
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
   } else {
@@ -66,7 +54,28 @@ ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, () => {
 })
 ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, () => mainWindow?.close())
 
-ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, (_event, url: string) => shell.openExternal(url))
+ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, (_event, url: string) => {
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`Blocked: only http/https URLs allowed, got ${parsed.protocol}`)
+  }
+  return shell.openExternal(url)
+})
+
+// TODO: full persistence implemented when electron-store is wired (future task)
+ipcMain.handle(IPC_CHANNELS.WINDOW_GET_STATE, () => null)
+ipcMain.handle(IPC_CHANNELS.WINDOW_SAVE_STATE, () => undefined)
+
+session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+  callback({
+    responseHeaders: {
+      ...details.responseHeaders,
+      'Content-Security-Policy': [
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'",
+      ],
+    },
+  })
+})
 
 app.whenReady().then(createWindow)
 

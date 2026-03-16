@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('kordaAPI', {
   onNotification: (callback: (payload: { title: string; body: string }) => void) => {
     const handler = (_: Electron.IpcRendererEvent, payload: { title: string; body: string }) =>
       callback(payload)
-    ipcRenderer.on('notification:push', handler)
-    return () => ipcRenderer.removeListener('notification:push', handler)
+    ipcRenderer.on(IPC_CHANNELS.NOTIFICATION_PUSH, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.NOTIFICATION_PUSH, handler)
   },
 })
