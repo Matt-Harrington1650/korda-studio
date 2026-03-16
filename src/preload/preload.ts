@@ -17,4 +17,7 @@ contextBridge.exposeInMainWorld('kordaAPI', {
     ipcRenderer.on(IPC_CHANNELS.NOTIFICATION_PUSH, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.NOTIFICATION_PUSH, handler)
   },
+  storeGet: (key: string) => ipcRenderer.invoke(IPC_CHANNELS.STORE_GET, key),
+  storeSet: (key: string, value: string | null) =>
+    ipcRenderer.invoke(IPC_CHANNELS.STORE_SET, key, value),
 })

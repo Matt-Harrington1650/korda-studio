@@ -16,6 +16,8 @@ export interface KordaAPI {
   openExternal: (url: string) => Promise<void>
   // Push notifications from main process → renderer (future phases)
   onNotification: (callback: (payload: { title: string; body: string }) => void) => () => void
+  storeGet: (key: string) => Promise<string | null>
+  storeSet: (key: string, value: string | null) => Promise<void>
 }
 
 // Channel names as constants to prevent typos
@@ -28,4 +30,6 @@ export const IPC_CHANNELS = {
   WINDOW_CLOSE: 'window:close',
   OPEN_EXTERNAL: 'shell:open-external',
   NOTIFICATION_PUSH: 'notification:push',
+  STORE_GET: 'store:get',
+  STORE_SET: 'store:set',
 } as const
