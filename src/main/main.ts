@@ -27,10 +27,50 @@ async function initStore(): Promise<void> {
   store = new Store<StoreSchema>()
 }
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
+function getDefaultWindowBounds() {
+  const { width: screenWidth, height: screenHeight } =
+    require('electron').screen.getPrimaryDisplay().workAreaSize
+  return {
     width: 1280,
     height: 800,
+    x: Math.floor((screenWidth - 1280) / 2),
+    y: Math.floor((screenHeight - 800) / 2),
+    isMaximized: false,
+  }
+}
+
+function getSavedWindowBounds() {
+  if (!store) return null
+  const saved = store.get('window-state')
+  if (!saved) return null
+
+  // Guard: validate the saved position overlaps at least one connected display's workArea.
+  // Uses overlap (not full-containment) to handle windows that span multiple monitors.
+  const { screen } = require('electron')
+  const displays = screen.getAllDisplays()
+  const isOnScreen = displays.some((display: Electron.Display) => {
+    const { x, y, width, height } = display.workArea
+    return (
+      saved.x < x + width &&
+      saved.x + saved.width > x &&
+      saved.y < y + height &&
+      saved.y + saved.height > y
+    )
+  })
+
+  return isOnScreen ? saved : null
+}
+
+function createWindow() {
+  const saved = getSavedWindowBounds()
+  const defaults = getDefaultWindowBounds()
+  const bounds = saved ?? defaults
+
+  mainWindow = new BrowserWindow({
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
     minWidth: 900,
     minHeight: 600,
     frame: false,
@@ -44,19 +84,38 @@ function createWindow() {
     },
   })
 
+  // Restore maximized state after window is shown
+  if (saved?.isMaximized) {
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.maximize()
+      mainWindow?.show()
+    })
+  } else {
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show()
+    })
+  }
+
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
   } else {
     mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`))
   }
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show()
-  })
-
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools()
   }
+
+  // Save window state on close
+  mainWindow.on('close', () => {
+    if (mainWindow && store) {
+      const bounds = mainWindow.getBounds()
+      store.set('window-state', {
+        ...bounds,
+        isMaximized: mainWindow.isMaximized(),
+      })
+    }
+  })
 }
 
 // IPC Handlers
