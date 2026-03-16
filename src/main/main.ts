@@ -7,6 +7,27 @@ declare const MAIN_WINDOW_VITE_NAME: string
 
 let mainWindow: BrowserWindow | null = null
 
+interface StoreSchema {
+  preferences: string
+  notifications: string
+  'window-state': {
+    x: number
+    y: number
+    width: number
+    height: number
+    isMaximized: boolean
+  }
+}
+
+// Assigned in initStore() before createWindow()
+// eslint-disable-next-line prefer-const
+let store: import('electron-store').default<StoreSchema>
+
+async function initStore(): Promise<void> {
+  const { default: Store } = await import('electron-store')
+  store = new Store<StoreSchema>()
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -60,11 +81,33 @@ ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, (_event, url: string) => {
   return shell.openExternal(url)
 })
 
-// TODO: full persistence implemented when electron-store is wired (future task)
-ipcMain.handle(IPC_CHANNELS.WINDOW_GET_STATE, () => null)
-ipcMain.handle(IPC_CHANNELS.WINDOW_SAVE_STATE, () => undefined)
+ipcMain.handle(IPC_CHANNELS.WINDOW_GET_STATE, () => {
+  return store?.get('window-state') ?? null
+})
 
-app.whenReady().then(() => {
+ipcMain.handle(IPC_CHANNELS.WINDOW_SAVE_STATE, () => {
+  if (mainWindow && store) {
+    const bounds = mainWindow.getBounds()
+    store.set('window-state', { ...bounds, isMaximized: mainWindow.isMaximized() })
+  }
+})
+
+ipcMain.handle(IPC_CHANNELS.STORE_GET, (_event, key: string) => {
+  return store?.get(key as keyof StoreSchema) ?? null
+})
+
+ipcMain.handle(IPC_CHANNELS.STORE_SET, (_event, key: string, value: string | null) => {
+  if (!store) return
+  if (value === null) {
+    store.delete(key as keyof StoreSchema)
+  } else {
+    store.set(key as keyof StoreSchema, value as StoreSchema[keyof StoreSchema])
+  }
+})
+
+app.whenReady().then(async () => {
+  await initStore()
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
