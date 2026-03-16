@@ -16,7 +16,8 @@ const routeNames: Record<string, string> = {
 export function StatusStrip() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { unreadCount } = useNotificationStore()
+  const notifications = useNotificationStore((s) => s.notifications)
+  const unreadCount = notifications.filter((n) => !n.read).length
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   useEffect(() => {
