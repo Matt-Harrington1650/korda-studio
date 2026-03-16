@@ -20,7 +20,6 @@ interface StoreSchema {
 }
 
 // Assigned in initStore() before createWindow()
-// eslint-disable-next-line prefer-const
 let store: import('electron-store').default<StoreSchema>
 
 async function initStore(): Promise<void> {

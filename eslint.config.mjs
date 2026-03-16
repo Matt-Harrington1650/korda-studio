@@ -9,4 +9,15 @@ export default tseslint.config(
   {
     ignores: ['out/**', '.vite/**', 'dist/**'],
   },
+  {
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
 )

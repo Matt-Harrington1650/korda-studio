@@ -5,13 +5,13 @@
 
 export function createElectronStorage(key: string) {
   return {
-    getItem: (_name: string): Promise<string | null> => {
+    getItem: (_: string): Promise<string | null> => {
       return window.kordaAPI.storeGet(key)
     },
-    setItem: (_name: string, value: string): Promise<void> => {
+    setItem: (_: string, value: string): Promise<void> => {
       return window.kordaAPI.storeSet(key, value)
     },
-    removeItem: (_name: string): Promise<void> => {
+    removeItem: (_: string): Promise<void> => {
       return window.kordaAPI.storeSet(key, null)
     },
   }
