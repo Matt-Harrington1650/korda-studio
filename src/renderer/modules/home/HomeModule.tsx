@@ -39,7 +39,9 @@ export default function HomeModule() {
           </h2>
           <div className="grid grid-cols-3 gap-3">
             <button
-              onClick={() => {/* command palette handled by Ctrl+K */}}
+              onClick={() => {
+                /* command palette handled by Ctrl+K */
+              }}
               className="flex items-center gap-3 p-4 bg-surface-raised border border-border rounded-lg hover:bg-white/5 transition-colors text-left"
             >
               <Command size={18} className="text-brand" />

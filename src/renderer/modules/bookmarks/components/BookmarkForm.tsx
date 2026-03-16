@@ -17,16 +17,29 @@ export function BookmarkForm({ onSave, onCancel, initial }: BookmarkFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim() || !url.trim()) return
-    onSave({ title: title.trim(), url: url.trim(), description: description.trim(), category: category.trim() || 'General' })
+    onSave({
+      title: title.trim(),
+      url: url.trim(),
+      description: description.trim(),
+      category: category.trim() || 'General',
+    })
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-surface-raised border border-border rounded-lg p-4 space-y-3">
+    <form
+      onSubmit={handleSubmit}
+      className="bg-surface-raised border border-border rounded-lg p-4 space-y-3"
+    >
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-text-primary">
           {initial ? 'Edit Bookmark' : 'Add Bookmark'}
         </h3>
-        <button type="button" onClick={onCancel} aria-label="Cancel" className="text-text-secondary hover:text-text-primary">
+        <button
+          type="button"
+          onClick={onCancel}
+          aria-label="Cancel"
+          className="text-text-secondary hover:text-text-primary"
+        >
           <X size={16} />
         </button>
       </div>
@@ -61,10 +74,17 @@ export function BookmarkForm({ onSave, onCancel, initial }: BookmarkFormProps) {
         className="w-full px-3 py-2 bg-surface-base border border-border rounded text-sm text-text-primary placeholder:text-text-secondary outline-none focus:border-brand"
       />
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+        >
           Cancel
         </button>
-        <button type="submit" className="px-3 py-1.5 text-sm bg-brand text-white rounded hover:bg-brand-hover transition-colors">
+        <button
+          type="submit"
+          className="px-3 py-1.5 text-sm bg-brand text-white rounded hover:bg-brand-hover transition-colors"
+        >
           {initial ? 'Update' : 'Add'}
         </button>
       </div>

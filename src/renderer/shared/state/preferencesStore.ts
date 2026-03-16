@@ -28,15 +28,11 @@ export const usePreferencesStore = create<PreferencesState>()(
         sidebarCollapsed: false,
         bookmarks: [],
         setDisplayName: (name) => set({ displayName: name }),
-        toggleSidebar: () =>
-          set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-        addBookmark: (bookmark) =>
-          set((state) => ({ bookmarks: [...state.bookmarks, bookmark] })),
+        toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+        addBookmark: (bookmark) => set((state) => ({ bookmarks: [...state.bookmarks, bookmark] })),
         updateBookmark: (id, updates) =>
           set((state) => ({
-            bookmarks: state.bookmarks.map((b) =>
-              b.id === id ? { ...b, ...updates } : b,
-            ),
+            bookmarks: state.bookmarks.map((b) => (b.id === id ? { ...b, ...updates } : b)),
           })),
         removeBookmark: (id) =>
           set((state) => ({

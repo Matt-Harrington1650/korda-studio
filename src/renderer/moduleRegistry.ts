@@ -10,9 +10,7 @@ export const modules: ModuleDefinition[] = [home, bookmarks, systemStatus, setti
 const groupRank: Record<string, number> = { work: 0, system: 1 }
 
 export const sidebarModules = [...modules].sort((a, b) =>
-  a.group === b.group
-    ? a.order - b.order
-    : (groupRank[a.group] ?? 99) - (groupRank[b.group] ?? 99),
+  a.group === b.group ? a.order - b.order : (groupRank[a.group] ?? 99) - (groupRank[b.group] ?? 99),
 )
 
 export const allActions: CommandAction[] = modules.flatMap((m) => m.commandPaletteActions ?? [])

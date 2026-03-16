@@ -26,21 +26,27 @@ export function TitleBar() {
         <button
           aria-label="Minimize"
           className="h-full px-3 hover:bg-white/5 transition-colors duration-150"
-          onClick={() => (window as Window & { kordaAPI?: typeof window.kordaAPI }).kordaAPI?.minimizeWindow?.()}
+          onClick={() =>
+            (window as Window & { kordaAPI?: typeof window.kordaAPI }).kordaAPI?.minimizeWindow?.()
+          }
         >
           <Minus size={14} className="text-text-secondary" />
         </button>
         <button
           aria-label="Maximize"
           className="h-full px-3 hover:bg-white/5 transition-colors duration-150"
-          onClick={() => (window as Window & { kordaAPI?: typeof window.kordaAPI }).kordaAPI?.maximizeWindow?.()}
+          onClick={() =>
+            (window as Window & { kordaAPI?: typeof window.kordaAPI }).kordaAPI?.maximizeWindow?.()
+          }
         >
           <Square size={12} className="text-text-secondary" />
         </button>
         <button
           aria-label="Close"
           className="h-full px-3 hover:bg-error/80 transition-colors duration-150"
-          onClick={() => (window as Window & { kordaAPI?: typeof window.kordaAPI }).kordaAPI?.closeWindow?.()}
+          onClick={() =>
+            (window as Window & { kordaAPI?: typeof window.kordaAPI }).kordaAPI?.closeWindow?.()
+          }
         >
           <X size={14} className="text-text-secondary" />
         </button>

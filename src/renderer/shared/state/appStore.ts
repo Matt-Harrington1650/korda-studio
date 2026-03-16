@@ -11,8 +11,7 @@ interface AppState {
 export const useAppStore = create<AppState>()(
   devtools((set) => ({
     commandPaletteOpen: false,
-    toggleCommandPalette: () =>
-      set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),
+    toggleCommandPalette: () => set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),
     openCommandPalette: () => set({ commandPaletteOpen: true }),
     closeCommandPalette: () => set({ commandPaletteOpen: false }),
   })),

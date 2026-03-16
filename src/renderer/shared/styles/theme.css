@@ -1,10 +1,10 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
-  --color-brand: #4A90D9;
-  --color-brand-hover: #5DA0E6;
-  --color-brand-active: #3A7BC8;
-  --color-brand-muted: rgba(74, 144, 217, 0.10);
+  --color-brand: #4a90d9;
+  --color-brand-hover: #5da0e6;
+  --color-brand-active: #3a7bc8;
+  --color-brand-muted: rgba(74, 144, 217, 0.1);
   --color-brand-border: rgba(74, 144, 217, 0.25);
 
   --color-surface-base: #1a1a2e;
@@ -20,6 +20,6 @@
   --color-warning: #f59e0b;
   --color-error: #ef4444;
 
-  --font-sans: "Inter", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }

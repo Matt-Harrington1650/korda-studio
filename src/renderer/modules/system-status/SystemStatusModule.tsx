@@ -23,7 +23,11 @@ const statusLabels: Record<ServiceStatus, string> = {
 
 export default function SystemStatusModule() {
   const [services, setServices] = useState<Service[]>([
-    { name: 'Network', status: navigator.onLine ? 'connected' : 'unreachable', lastChecked: new Date() },
+    {
+      name: 'Network',
+      status: navigator.onLine ? 'connected' : 'unreachable',
+      lastChecked: new Date(),
+    },
     { name: 'File Server', status: 'not-configured', lastChecked: new Date() },
     { name: 'AI Services', status: 'not-configured', lastChecked: new Date() },
     { name: 'Backend API', status: 'not-configured', lastChecked: new Date() },
@@ -33,7 +37,11 @@ export default function SystemStatusModule() {
     setServices((prev) =>
       prev.map((s) =>
         s.name === 'Network'
-          ? { ...s, status: navigator.onLine ? 'connected' : 'unreachable', lastChecked: new Date() }
+          ? {
+              ...s,
+              status: navigator.onLine ? 'connected' : 'unreachable',
+              lastChecked: new Date(),
+            }
           : { ...s, lastChecked: new Date() },
       ),
     )
@@ -68,18 +76,29 @@ export default function SystemStatusModule() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-border bg-surface-raised">
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">Service</th>
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">Status</th>
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">Last Checked</th>
+              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+                Service
+              </th>
+              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+                Status
+              </th>
+              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+                Last Checked
+              </th>
             </tr>
           </thead>
           <tbody>
             {services.map((service, i) => (
-              <tr key={service.name} className={i < services.length - 1 ? 'border-b border-border' : ''}>
+              <tr
+                key={service.name}
+                className={i < services.length - 1 ? 'border-b border-border' : ''}
+              >
                 <td className="px-4 py-3 text-sm text-text-primary">{service.name}</td>
                 <td className="px-4 py-3">
                   <span className={`inline-flex items-center gap-1.5 text-xs`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${statusColors[service.status].split(' ')[0]}`} />
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${statusColors[service.status].split(' ')[0]}`}
+                    />
                     <span className={statusColors[service.status].split(' ')[1]}>
                       {statusLabels[service.status]}
                     </span>

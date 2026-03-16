@@ -61,7 +61,10 @@ export default function BookmarksModule() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-text-primary">Bookmarks</h1>
         <button
-          onClick={() => { setEditingBookmark(null); setShowForm(true) }}
+          onClick={() => {
+            setEditingBookmark(null)
+            setShowForm(true)
+          }}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-brand text-white rounded hover:bg-brand-hover transition-colors text-sm"
         >
           <Plus size={14} /> Add
@@ -69,7 +72,10 @@ export default function BookmarksModule() {
       </div>
 
       <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+        <Search
+          size={14}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary"
+        />
         <input
           type="text"
           placeholder="Filter bookmarks..."
@@ -82,7 +88,10 @@ export default function BookmarksModule() {
       {showForm && (
         <BookmarkForm
           onSave={handleSave}
-          onCancel={() => { setShowForm(false); setEditingBookmark(null) }}
+          onCancel={() => {
+            setShowForm(false)
+            setEditingBookmark(null)
+          }}
           initial={editingBookmark ?? undefined}
         />
       )}

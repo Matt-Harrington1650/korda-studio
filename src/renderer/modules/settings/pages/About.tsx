@@ -4,7 +4,10 @@ export function Component() {
   const [appVersion, setAppVersion] = useState('...')
 
   useEffect(() => {
-    window.kordaAPI.getAppVersion().then(setAppVersion).catch(() => setAppVersion('unknown'))
+    window.kordaAPI
+      .getAppVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion('unknown'))
   }, [])
 
   return (

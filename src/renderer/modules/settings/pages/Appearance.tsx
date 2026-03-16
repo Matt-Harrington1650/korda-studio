@@ -8,7 +8,9 @@ export function Component() {
         <Moon size={20} className="text-brand" />
         <div>
           <div className="text-sm text-text-primary">Dark Theme</div>
-          <div className="text-[11px] text-text-secondary">Active — light theme coming in a future update</div>
+          <div className="text-[11px] text-text-secondary">
+            Active — light theme coming in a future update
+          </div>
         </div>
       </div>
     </div>
