@@ -173,7 +173,6 @@ export const fileIndexService = {
 
     const root = rootGetter()
     if (root) {
-      this.crawlIfStale()
       this.startWatcher(root)
     }
   },
@@ -213,10 +212,158 @@ export const fileIndexService = {
     return shell.openPath(filePath)
   },
 
-  // Stubs — implemented in Tasks 5 and 6
-  crawlIfStale(): void { /* Task 5 */ },
-  async startCrawl(): Promise<void> { /* Task 5 */ },
-  reindex(): void { /* Task 5 */ },
+  crawlIfStale(): void {
+    const lastCrawlMs = getMeta('last_crawl_ms')
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000
+    if (!lastCrawlMs || Date.now() - parseInt(lastCrawlMs, 10) > TWENTY_FOUR_HOURS) {
+      this.startCrawl().catch((err) => {
+        console.error('fileIndexService: crawl failed', err)
+      })
+    }
+  },
+
+  async startCrawl(): Promise<void> {
+    if (!db) return
+    const root = rootGetter()
+    if (!root) return
+
+    const crawlStartMs = Date.now()
+    setMeta('crawl_status', 'crawling')
+    setMeta('root_path', root)
+
+    const batchInsert = db.transaction((rows: Record<string, unknown>[]) => {
+      for (const row of rows) {
+        stmtUpsertFile.run(row)
+      }
+    })
+
+    let filesProcessed = 0
+    const batch: Record<string, unknown>[] = []
+
+    const flushBatch = () => {
+      if (batch.length === 0) return
+      batchInsert([...batch])
+      filesProcessed += batch.length
+      batch.length = 0
+      mainWin?.webContents.send(IPC_CHANNELS.FILE_INDEX_PROGRESS, filesProcessed)
+    }
+
+    async function walk(dir: string, isRoot = false): Promise<void> {
+      let entries: import('node:fs').Dirent[]
+      try {
+        entries = await fsPromises.readdir(dir, { withFileTypes: true }) as import('node:fs').Dirent[]
+      } catch (err) {
+        if (isRoot) throw err // propagate root errors to the outer try/catch
+        return // skip unreadable subdirectories
+      }
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name)
+        const isDir = entry.isDirectory()
+        const { project, discipline } = getPathSegments(fullPath, root, isDir)
+
+        if (isDir) {
+          batch.push({
+            path: fullPath,
+            name: entry.name,
+            ext: '',
+            sizeBytes: 0,
+            modifiedMs: Date.now(),
+            isDir: 1,
+            indexedAt: crawlStartMs,
+            project,
+            discipline,
+            docType: null,
+            drawingNumber: null,
+            revision: null,
+            issueStatus: null,
+            fileDateMs: null,
+          })
+          await walk(fullPath)
+        } else {
+          let stat: Awaited<ReturnType<typeof fsPromises.stat>>
+          try {
+            stat = await fsPromises.stat(fullPath)
+          } catch {
+            continue
+          }
+          const lastDot = entry.name.lastIndexOf('.')
+          const ext = lastDot >= 0 ? entry.name.slice(lastDot + 1).toLowerCase() : ''
+          const parsed = parseFilename(entry.name)
+
+          batch.push({
+            path: fullPath,
+            name: entry.name,
+            ext,
+            sizeBytes: stat.size,
+            modifiedMs: Math.round(stat.mtimeMs),
+            isDir: 0,
+            indexedAt: crawlStartMs,
+            project,
+            discipline,
+            docType: parsed.docType,
+            drawingNumber: parsed.drawingNumber,
+            revision: parsed.revision,
+            issueStatus: parsed.issueStatus,
+            fileDateMs: parsed.fileDateMs,
+          })
+        }
+
+        if (batch.length >= BATCH_SIZE) {
+          flushBatch()
+        }
+      }
+    }
+
+    try {
+      await walk(root, true)
+      flushBatch() // flush remaining rows
+
+      // Stale file cleanup: remove rows not seen in this crawl
+      db.prepare('DELETE FROM files WHERE indexed_at < ?').run(crawlStartMs)
+
+      // Populate projects table from distinct project values
+      const projectRows = db.prepare(
+        'SELECT DISTINCT project FROM files WHERE project IS NOT NULL AND is_dir = 0'
+      ).all() as { project: string }[]
+      const now = Date.now()
+      for (const { project } of projectRows) {
+        stmtUpsertProject.run({ folderName: project, firstSeenMs: now })
+        stmtUpdateProjectCounts.run({ folderName: project })
+      }
+
+      const fileCount = (db.prepare('SELECT COUNT(*) AS c FROM files WHERE is_dir = 0').get() as { c: number }).c
+      setMeta('file_count', String(fileCount))
+      setMeta('last_crawl_ms', String(Date.now()))
+      setMeta('crawl_status', 'idle')
+      setMeta('crawl_error', '')
+    } catch (err) {
+      setMeta('crawl_status', 'error')
+      setMeta('crawl_error', String(err))
+    }
+  },
+
+  reindex(): void {
+    if (!db) return
+    db.exec('DELETE FROM files')
+    db.exec('DELETE FROM projects')
+    db.exec('DELETE FROM index_meta')
+    this.startCrawl().catch((err) => {
+      console.error('fileIndexService: reindex crawl failed', err)
+    })
+  },
   startWatcher(_root: string): void { /* Task 6 */ },
-  search(_params: SearchParams): FileEntry[] { return [] /* Task 6 */ },
+
+  search(params: SearchParams): FileEntry[] {
+    if (!db) return []
+    const pattern = `%${params.query ?? ''}%`
+    return stmtSearch.all({
+      pattern,
+      project: params.project ?? null,
+      discipline: params.discipline ?? null,
+      docType: params.docType ?? null,
+      ext: params.ext ?? null,
+      limit: params.limit ?? 200,
+    }) as FileEntry[]
+  },
 }
