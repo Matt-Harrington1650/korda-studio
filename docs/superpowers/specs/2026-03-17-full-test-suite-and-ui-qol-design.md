@@ -133,6 +133,8 @@ Signature: `humanizeAge(ageMs: number): string`
 - `onFileIndexProgress` cleanup function is called on unmount (mock `onFileIndexProgress` to return a spy; unmount the component; assert spy was called)
 - Progress event with count 500 renders `"Indexing… 500 files so far"` while status is `crawling` (if not already covered by existing tests — verify first)
 
+**Note on existing test wording:** The existing `IndexStatusBar.test.tsx` asserts text matching `/minutes ago/` or similar plurals from the current `formatRelativeTime` function. When `humanizeAge` replaces it (singular: `"1 min ago"`), those existing test assertions must be updated to match the new wording. This is in scope for Task 4.
+
 ---
 
 ### Task 5 — `useIndexingToasts` hook + App.tsx wire
@@ -264,7 +266,10 @@ export async function launchApp() {
 **`e2e/fixtures/testDataDir.ts`:**
 ```ts
 import path from 'node:path'
-export const TEST_DATA_ROOT = path.resolve(__dirname, '../../src/main/__testdata__')
+// Points to the `projects/` subdirectory — PROJ-001 and PROJ-002 live inside it.
+// __testdata__/ itself contains only a `projects/` folder; the Connections root
+// must be set to __testdata__/projects/ for fileIndexService to discover the project folders.
+export const TEST_DATA_ROOT = path.resolve(__dirname, '../../src/main/__testdata__/projects')
 ```
 
 Test data available:
