@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, screen, session, shell } from 'electron'
 import path from 'path'
 import { IPC_CHANNELS } from '../shared/ipc-types'
+import { fileIndexService } from './fileIndexService'
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string
 declare const MAIN_WINDOW_VITE_NAME: string
@@ -17,6 +18,7 @@ interface StoreSchema {
     height: number
     isMaximized: boolean
   }
+  connections: string  // JSON-encoded { fileServerRoot: string }
 }
 
 // Assigned in initStore() before createWindow()
@@ -162,6 +164,23 @@ ipcMain.handle(IPC_CHANNELS.STORE_SET, (_event, key: string, value: string | nul
   }
 })
 
+ipcMain.handle(IPC_CHANNELS.FILE_INDEX_SEARCH, (_event, params) => {
+  return fileIndexService.search(params)
+})
+
+ipcMain.handle(IPC_CHANNELS.FILE_INDEX_STATUS, () => {
+  return fileIndexService.getStatus()
+})
+
+ipcMain.handle(IPC_CHANNELS.FILE_INDEX_OPEN, (_event, filePath: string) => {
+  return fileIndexService.openFile(filePath)
+})
+
+ipcMain.handle(IPC_CHANNELS.FILE_INDEX_REINDEX, () => {
+  fileIndexService.reindex()
+  // Resolves immediately — crawl runs in background; renderer tracks via FILE_INDEX_PROGRESS
+})
+
 app.whenReady().then(async () => {
   await initStore()
 
@@ -177,6 +196,23 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+
+  const getRoot = (): string => {
+    const raw = store?.get('connections') ?? ''
+    if (!raw) return ''
+    try {
+      const parsed = JSON.parse(raw as string) as { fileServerRoot?: string }
+      return parsed.fileServerRoot ?? ''
+    } catch {
+      return ''
+    }
+  }
+
+  fileIndexService.init(
+    path.join(app.getPath('userData'), 'file-index.db'),
+    getRoot,
+    mainWindow
+  )
 })
 
 app.on('window-all-closed', () => {
