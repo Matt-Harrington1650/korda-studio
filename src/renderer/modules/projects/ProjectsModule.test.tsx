@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import ProjectsModule from './ProjectsModule'
 
 const mockFileIndexSearch = vi.fn()
@@ -7,6 +7,10 @@ const mockFileIndexStatus = vi.fn()
 const mockFileIndexOpen = vi.fn()
 const mockFileIndexReindex = vi.fn()
 const mockOnFileIndexProgress = vi.fn().mockReturnValue(() => {})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -106,6 +110,22 @@ describe('ProjectsModule', () => {
     await waitFor(() => screen.getByText('C-101.dwg'))
     fireEvent.click(screen.getByText('C-101.dwg'))
     await waitFor(() => expect(mockFileIndexOpen).toHaveBeenCalledWith('\\\\SERVER\\P001\\C-101.dwg'))
+    vi.useRealTimers()
+  })
+
+  it('shows Loader2 spinner while fileIndexSearch is in-flight', async () => {
+    let resolveSearch!: (val: never[]) => void
+    mockFileIndexSearch.mockReturnValue(new Promise((r) => { resolveSearch = r }))
+    vi.useFakeTimers()
+    render(<ProjectsModule />)
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'test' } })
+    await act(async () => { vi.advanceTimersByTime(200) })
+    // Spinner should be visible while IPC hangs
+    await waitFor(() => {
+      // The Loader2 icon renders with the lucide class (lucide-react maps Loader2 → lucide-loader-circle)
+      expect(document.querySelector('.lucide-loader-circle')).toBeTruthy()
+    })
+    resolveSearch([])
     vi.useRealTimers()
   })
 })

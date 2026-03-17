@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { Loader2 } from 'lucide-react'
 import { IndexStatusBar } from './components/IndexStatusBar'
 import { SearchResults } from './components/SearchResults'
 import type { FileEntry, IndexStatus } from '../../../shared/ipc-types'
@@ -71,16 +72,24 @@ export default function ProjectsModule() {
 
       {/* Search input */}
       <div className="px-4 py-3 border-b border-border">
-        <input
-          ref={searchInputRef}
-          role="searchbox"
-          type="search"
-          value={query}
-          onChange={handleQueryChange}
-          placeholder="Search files by name, drawing number, or path…"
-          className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded
-                     text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
-        />
+        <div className="relative">
+          <input
+            ref={searchInputRef}
+            role="searchbox"
+            type="search"
+            value={query}
+            onChange={handleQueryChange}
+            placeholder="Search files by name, drawing number, or path…"
+            className="w-full px-3 py-2 pr-8 text-sm bg-surface-raised border border-border rounded
+                       text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
+          />
+          {loading && (
+            <Loader2
+              size={14}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-text-secondary"
+            />
+          )}
+        </div>
       </div>
 
       {/* Content area */}
@@ -95,10 +104,6 @@ export default function ProjectsModule() {
         ) : showSearchHint ? (
           <div className="flex items-center justify-center h-full text-text-secondary">
             <p className="text-sm">Search for files by name, drawing number, or path</p>
-          </div>
-        ) : loading ? (
-          <div className="flex items-center justify-center h-full text-text-secondary">
-            <p className="text-sm">Searching…</p>
           </div>
         ) : results.length === 0 && query.trim() ? (
           <div className="flex items-center justify-center h-full text-text-secondary">
