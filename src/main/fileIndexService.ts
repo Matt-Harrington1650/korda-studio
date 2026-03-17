@@ -347,7 +347,6 @@ export const fileIndexService = {
     if (!db) return
     db.exec('DELETE FROM files')
     db.exec('DELETE FROM projects')
-    db.exec('DELETE FROM index_meta')
     this.startCrawl().catch((err) => {
       console.error('fileIndexService: reindex crawl failed', err)
     })

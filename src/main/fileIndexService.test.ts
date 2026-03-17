@@ -203,6 +203,49 @@ describe('fileIndexService — reindex', () => {
   })
 })
 
+describe('fileIndexService — stale cleanup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+  afterEach(() => {
+    fileIndexService.close()
+  })
+
+  it('removes stale entries after re-crawl removes a file', async () => {
+    const root = '\\\\SERVER\\projects'
+
+    // First crawl: P001 with C-101.dwg and C-102.dwg
+    vi.mocked(fsPromises.readdir).mockImplementation(async (dir) => {
+      if (dir === root) return [makeDirent('P001', true)] as any
+      if (String(dir).endsWith('P001')) {
+        return [makeDirent('C-101.dwg', false), makeDirent('C-102.dwg', false)] as any
+      }
+      return [] as any
+    })
+    vi.mocked(fsPromises.stat).mockResolvedValue({ size: 1024, mtimeMs: 1700000000000 } as any)
+
+    fileIndexService.init(':memory:', () => root, null)
+    await fileIndexService.startCrawl()
+
+    // Confirm both files indexed
+    expect(fileIndexService.search({ query: 'C-101' })).toHaveLength(1)
+    expect(fileIndexService.search({ query: 'C-102' })).toHaveLength(1)
+
+    // Second crawl: C-102.dwg was deleted
+    vi.mocked(fsPromises.readdir).mockImplementation(async (dir) => {
+      if (dir === root) return [makeDirent('P001', true)] as any
+      if (String(dir).endsWith('P001')) return [makeDirent('C-101.dwg', false)] as any
+      return [] as any
+    })
+
+    await fileIndexService.startCrawl()
+
+    // C-102 should be gone (stale cleanup)
+    expect(fileIndexService.search({ query: 'C-101' })).toHaveLength(1)
+    expect(fileIndexService.search({ query: 'C-102' })).toHaveLength(0)
+  })
+})
+
 // Helper: create a mock Dirent-like object
 function makeDirent(name: string, isDirectory: boolean) {
   return {

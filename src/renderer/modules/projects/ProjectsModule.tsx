@@ -16,6 +16,13 @@ export default function ProjectsModule() {
     searchInputRef.current?.focus()
   }, [])
 
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
   // Load initial status
   useEffect(() => {
     window.kordaAPI.fileIndexStatus().then(setIndexStatus).catch(() => null)

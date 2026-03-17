@@ -213,6 +213,7 @@ app.whenReady().then(async () => {
     getRoot,
     mainWindow
   )
+  fileIndexService.crawlIfStale()
 })
 
 app.on('window-all-closed', () => {
