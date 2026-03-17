@@ -114,7 +114,7 @@ describe('useIndexingToasts', () => {
       return () => {}
     })
 
-    const { rerender } = renderHook(() => useIndexingToasts())
+    renderHook(() => useIndexingToasts())
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(1))
 
     // First crawl: progress event → toast fires
@@ -147,7 +147,6 @@ describe('useIndexingToasts', () => {
 
     // After reset, a second progress event should fire info toast again
     useToastStore.setState({ toasts: [] })
-    rerender()
     act(() => { progressCb(10) })
     await waitFor(() =>
       expect(useToastStore.getState().toasts.some((t) => t.type === 'info')).toBe(true)

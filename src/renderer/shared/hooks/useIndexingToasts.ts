@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useToastStore } from '@shared/state/toastStore'
+// relative import: @shared/* maps to src/renderer/shared/, not src/shared/
 import type { IndexStatus } from '../../../shared/ipc-types'
 
 export function useIndexingToasts(): void {
