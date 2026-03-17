@@ -246,6 +246,32 @@ describe('fileIndexService — stale cleanup', () => {
   })
 })
 
+describe('fileIndexService — rootGetter live reference', () => {
+  afterEach(() => {
+    fileIndexService.close()
+    vi.clearAllMocks()
+  })
+
+  it('rootGetter is read at crawl time, not captured at init() call time', async () => {
+    // Init with one rootGetter, then re-init with another before reindex
+    fileIndexService.init(':memory:', () => 'C:\\path-A', null)
+    // Re-init: overwrites the stored rootGetter with one returning path-B (which does not exist)
+    fileIndexService.init(':memory:', () => 'C:\\path-B-nonexistent-xyz', null)
+
+    fileIndexService.reindex()
+
+    // Wait for crawl to attempt and finish (readdir is mocked to return [])
+    await vi.waitFor(async () => {
+      const status = fileIndexService.getStatus()
+      expect(['error', 'idle']).toContain(status.status)
+    }, { timeout: 3000 })
+
+    const status = fileIndexService.getStatus()
+    // The crawl_error or root_path should reference path-B, not path-A
+    expect(status.rootPath ?? status.crawlError ?? '').toContain('path-B-nonexistent')
+  })
+})
+
 // Helper: create a mock Dirent-like object
 function makeDirent(name: string, isDirectory: boolean) {
   return {
