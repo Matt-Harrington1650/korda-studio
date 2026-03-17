@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw } from 'lucide-react'
 import type { IndexStatus } from '../../../../shared/ipc-types'
+import { humanizeAge } from '../../../shared/utils/humanizeAge'
 
 interface Props {
   onReindex: () => void
@@ -57,7 +58,7 @@ export function IndexStatusBar({ onReindex }: Props) {
           <span>
             {count.toLocaleString()} files
             {status.lastCrawledMs
-              ? ` · updated ${formatRelativeTime(status.lastCrawledMs)}`
+              ? ` · updated ${humanizeAge(Date.now() - status.lastCrawledMs)}`
               : ''}
           </span>
         )}
@@ -72,14 +73,4 @@ export function IndexStatusBar({ onReindex }: Props) {
       )}
     </div>
   )
-}
-
-function formatRelativeTime(ms: number): string {
-  const diffMs = Date.now() - ms
-  const minutes = Math.floor(diffMs / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
-  return `${Math.floor(hours / 24)} days ago`
 }

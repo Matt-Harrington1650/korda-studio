@@ -37,7 +37,7 @@ describe('IndexStatusBar', () => {
     render(<IndexStatusBar onReindex={mockFileIndexReindex} />)
     await waitFor(() => {
       expect(screen.getByText(/47,823/)).toBeInTheDocument()
-      expect(screen.getByText(/minute/)).toBeInTheDocument()
+      expect(screen.getByText(/min ago/)).toBeInTheDocument()
     })
   })
 
@@ -71,5 +71,18 @@ describe('IndexStatusBar', () => {
     await waitFor(() => screen.getByRole('button', { name: /retry/i }))
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(mockFileIndexReindex).toHaveBeenCalled()
+  })
+
+  it('calls the onFileIndexProgress cleanup function on unmount', async () => {
+    const unsubscribeSpy = vi.fn()
+    mockOnFileIndexProgress.mockReturnValue(unsubscribeSpy)
+    mockFileIndexStatus.mockResolvedValue({
+      status: 'idle', fileCount: 10, lastCrawledMs: Date.now(),
+      rootPath: '\\\\SERVER\\projects', crawlError: null,
+    })
+    const { unmount } = render(<IndexStatusBar onReindex={mockFileIndexReindex} />)
+    await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalled())
+    unmount()
+    expect(unsubscribeSpy).toHaveBeenCalledTimes(1)
   })
 })
