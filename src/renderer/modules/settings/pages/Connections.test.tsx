@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Component } from './Connections'
 
@@ -69,5 +69,104 @@ describe('Connections page', () => {
     await waitFor(() => screen.getByRole('button', { name: /re.?index/i }))
     fireEvent.click(screen.getByRole('button', { name: /re.?index/i }))
     await waitFor(() => expect(mockFileIndexReindex).toHaveBeenCalled())
+  })
+
+  it('shows success banner after save', async () => {
+    render(<Component />)
+    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
+      target: { value: 'C:\\projects' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() =>
+      expect(screen.getByText(/✓ Saved/i)).toBeInTheDocument()
+    )
+  })
+
+  it('success banner disappears after 4 seconds', async () => {
+    vi.useFakeTimers()
+    render(<Component />)
+    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
+      target: { value: 'C:\\projects' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(screen.getByText(/✓ Saved/i)).toBeInTheDocument())
+    act(() => { vi.advanceTimersByTime(4_001) })
+    expect(screen.queryByText(/✓ Saved/i)).not.toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('shows error message when storeSet rejects', async () => {
+    mockStoreSet.mockRejectedValue(new Error('disk full'))
+    render(<Component />)
+    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
+      target: { value: 'C:\\projects' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() =>
+      expect(screen.getByText(/disk full/i)).toBeInTheDocument()
+    )
+  })
+
+  it('shows error message when fileIndexReindex rejects', async () => {
+    mockFileIndexReindex.mockRejectedValue(new Error('IPC failed'))
+    render(<Component />)
+    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
+      target: { value: 'C:\\projects' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() =>
+      expect(screen.getByText(/IPC failed/i)).toBeInTheDocument()
+    )
+  })
+
+  it('banner and error are mutually exclusive — no error on success', async () => {
+    render(<Component />)
+    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
+      target: { value: 'C:\\projects' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(screen.getByText(/✓ Saved/i)).toBeInTheDocument())
+    expect(screen.queryByText(/Error:/i)).not.toBeInTheDocument()
+  })
+
+  it('Save button shows "Saving…" while IPC in-flight', async () => {
+    // Delay resolution so we can observe the in-flight state
+    let resolve!: () => void
+    mockStoreSet.mockReturnValue(new Promise<void>((r) => { resolve = r }))
+    render(<Component />)
+    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
+      target: { value: 'C:\\projects' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    // Use waitFor — React 19 state updates are async and may not flush synchronously after fireEvent
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /saving/i })).toBeInTheDocument()
+    )
+    resolve()
+    await waitFor(() => expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument())
+  })
+
+  it('Save button is re-enabled after save completes', async () => {
+    render(<Component />)
+    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
+      target: { value: 'C:\\projects' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /save/i })).not.toBeDisabled()
+    )
+  })
+
+  it('storeSet is called before fileIndexReindex', async () => {
+    const callOrder: string[] = []
+    mockStoreSet.mockImplementation(async () => { callOrder.push('storeSet') })
+    mockFileIndexReindex.mockImplementation(async () => { callOrder.push('reindex') })
+    render(<Component />)
+    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
+      target: { value: 'C:\\projects' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(callOrder).toHaveLength(2))
+    expect(callOrder).toEqual(['storeSet', 'reindex'])
   })
 })
