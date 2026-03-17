@@ -352,11 +352,82 @@ export const fileIndexService = {
       console.error('fileIndexService: reindex crawl failed', err)
     })
   },
-  startWatcher(_root: string): void { /* Task 6 */ },
+  startWatcher(root: string): void {
+    if (!db) return
+    watcherRetries = 0
+
+    const restartAfterError = () => {
+      if (watcherRetries >= MAX_WATCHER_RETRIES) return
+      watcherRetries++
+      const delayMs = 30_000 * Math.pow(2, watcherRetries - 1)
+      setTimeout(() => {
+        watcherInstance?.close()
+        this.startWatcher(root)
+      }, delayMs)
+    }
+
+    watcherInstance = chokidar
+      .watch(root, { usePolling: true, interval: 5000, ignoreInitial: true })
+      .on('add', (filePath) => {
+        fsPromises.stat(filePath).then((stat) => {
+          const name = path.basename(filePath)
+          const lastDot = name.lastIndexOf('.')
+          const ext = lastDot >= 0 ? name.slice(lastDot + 1).toLowerCase() : ''
+          const parsed = parseFilename(name)
+          const { project, discipline } = getPathSegments(filePath, root, false)
+          stmtUpsertFile.run({
+            path: filePath, name, ext,
+            sizeBytes: stat.size,
+            modifiedMs: Math.round(stat.mtimeMs),
+            isDir: 0,
+            indexedAt: Date.now(),
+            project, discipline,
+            docType: parsed.docType, drawingNumber: parsed.drawingNumber,
+            revision: parsed.revision, issueStatus: parsed.issueStatus,
+            fileDateMs: parsed.fileDateMs,
+          })
+        }).catch(() => { /* file already gone */ })
+      })
+      .on('change', (filePath) => {
+        fsPromises.stat(filePath).then((stat) => {
+          stmtUpdateFile.run({
+            path: filePath,
+            sizeBytes: stat.size,
+            modifiedMs: Math.round(stat.mtimeMs),
+            indexedAt: Date.now(),
+          })
+        }).catch(() => { /* ignore */ })
+      })
+      .on('unlink', (filePath) => {
+        stmtDeleteFile.run(filePath)
+      })
+      .on('addDir', (dirPath) => {
+        const name = path.basename(dirPath)
+        const { project, discipline } = getPathSegments(dirPath, root, true)
+        stmtUpsertFile.run({
+          path: dirPath, name, ext: '',
+          sizeBytes: 0, modifiedMs: Date.now(), isDir: 1,
+          indexedAt: Date.now(),
+          project, discipline,
+          docType: null, drawingNumber: null,
+          revision: null, issueStatus: null, fileDateMs: null,
+        })
+      })
+      .on('unlinkDir', (dirPath) => {
+        stmtDeleteFile.run(dirPath)
+        stmtDeleteChildren.run(`${dirPath}${path.sep}%`)
+      })
+      .on('error', (err) => {
+        console.error('fileIndexService watcher error:', err)
+        restartAfterError()
+      })
+  },
 
   search(params: SearchParams): FileEntry[] {
     if (!db) return []
-    const pattern = `%${params.query ?? ''}%`
+    const trimmed = (params.query ?? '').trim()
+    if (!trimmed) return []
+    const pattern = `%${trimmed}%`
     return stmtSearch.all({
       pattern,
       project: params.project ?? null,

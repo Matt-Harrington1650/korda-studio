@@ -211,3 +211,104 @@ function makeDirent(name: string, isDirectory: boolean) {
     isFile: () => !isDirectory,
   }
 }
+
+import chokidar from 'chokidar'
+
+describe('fileIndexService — search', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(fsPromises.readdir).mockResolvedValue([])
+    fileIndexService.init(':memory:', () => '\\\\SERVER\\projects', null)
+  })
+  afterEach(() => {
+    fileIndexService.close()
+  })
+
+  it('returns empty array for blank query', () => {
+    expect(fileIndexService.search({ query: '' })).toEqual([])
+  })
+
+  it('returns empty array for whitespace-only query', () => {
+    expect(fileIndexService.search({ query: '   ' })).toEqual([])
+  })
+
+  it('returns matching files by name LIKE query', async () => {
+    vi.mocked(fsPromises.readdir).mockImplementation(async (dir) => {
+      if (dir === '\\\\SERVER\\projects') return [makeDirent('P001', true)] as any
+      if (String(dir).endsWith('P001')) return [makeDirent('C-101_IFC.dwg', false)] as any
+      return [] as any
+    })
+    vi.mocked(fsPromises.stat).mockResolvedValue({ size: 1024, mtimeMs: 1700000000000 } as any)
+    await fileIndexService.startCrawl()
+
+    const results = fileIndexService.search({ query: 'C-101' })
+    expect(results).toHaveLength(1)
+    expect(results[0].name).toBe('C-101_IFC.dwg')
+    expect(results[0].docType).toBe('drawing')
+    expect(results[0].project).toBe('P001')
+  })
+
+  it('filters by project', async () => {
+    vi.mocked(fsPromises.readdir).mockImplementation(async (dir) => {
+      if (dir === '\\\\SERVER\\projects') return [makeDirent('P001', true), makeDirent('P002', true)] as any
+      if (String(dir).endsWith('P001')) return [makeDirent('C-101.dwg', false)] as any
+      if (String(dir).endsWith('P002')) return [makeDirent('C-201.dwg', false)] as any
+      return [] as any
+    })
+    vi.mocked(fsPromises.stat).mockResolvedValue({ size: 1024, mtimeMs: 1700000000000 } as any)
+    await fileIndexService.startCrawl()
+
+    const results = fileIndexService.search({ query: 'dwg', project: 'P001' })
+    expect(results.every((r) => r.project === 'P001')).toBe(true)
+  })
+
+  it('respects the limit parameter', async () => {
+    vi.mocked(fsPromises.readdir).mockImplementation(async (dir) => {
+      if (dir === '\\\\SERVER\\projects') return [makeDirent('P001', true)] as any
+      if (String(dir).endsWith('P001')) {
+        return Array.from({ length: 10 }, (_, i) => makeDirent(`file_${i}.pdf`, false)) as any
+      }
+      return [] as any
+    })
+    vi.mocked(fsPromises.stat).mockResolvedValue({ size: 100, mtimeMs: 1700000000000 } as any)
+    await fileIndexService.startCrawl()
+
+    const results = fileIndexService.search({ query: 'file', limit: 3 })
+    expect(results.length).toBeLessThanOrEqual(3)
+  })
+})
+
+describe('fileIndexService — startWatcher', () => {
+  let mockWatcher: { on: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWatcher = { on: vi.fn().mockReturnThis(), close: vi.fn() }
+    vi.mocked(chokidar.watch).mockReturnValue(mockWatcher as any)
+    vi.mocked(fsPromises.readdir).mockResolvedValue([])
+    fileIndexService.init(':memory:', () => '', null)
+  })
+  afterEach(() => {
+    fileIndexService.close()
+  })
+
+  it('calls chokidar.watch with polling options', () => {
+    fileIndexService.startWatcher('\\\\SERVER\\projects')
+    expect(chokidar.watch).toHaveBeenCalledWith('\\\\SERVER\\projects', {
+      usePolling: true,
+      interval: 5000,
+      ignoreInitial: true,
+    })
+  })
+
+  it('registers add, unlink, change, addDir, unlinkDir, and error handlers', () => {
+    fileIndexService.startWatcher('\\\\SERVER\\projects')
+    const registeredEvents = mockWatcher.on.mock.calls.map((c: any[]) => c[0])
+    expect(registeredEvents).toContain('add')
+    expect(registeredEvents).toContain('unlink')
+    expect(registeredEvents).toContain('change')
+    expect(registeredEvents).toContain('addDir')
+    expect(registeredEvents).toContain('unlinkDir')
+    expect(registeredEvents).toContain('error')
+  })
+})
