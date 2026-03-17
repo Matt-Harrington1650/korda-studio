@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Component } from './Connections'
 
 const mockStoreSet = vi.fn()
@@ -24,6 +24,10 @@ beforeEach(() => {
 })
 
 describe('Connections page', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('renders the File Server section with a root path input', () => {
     render(<Component />)
     expect(screen.getByText('File Server')).toBeInTheDocument()
@@ -90,9 +94,8 @@ describe('Connections page', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
     await waitFor(() => expect(screen.getByText(/✓ Saved/i)).toBeInTheDocument())
-    act(() => { vi.advanceTimersByTime(4_001) })
+    await act(async () => { vi.advanceTimersByTime(4_001) })
     expect(screen.queryByText(/✓ Saved/i)).not.toBeInTheDocument()
-    vi.useRealTimers()
   })
 
   it('shows error message when storeSet rejects', async () => {
