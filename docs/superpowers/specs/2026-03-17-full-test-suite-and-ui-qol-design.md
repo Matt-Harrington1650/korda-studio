@@ -157,12 +157,17 @@ onFileIndexProgress fires (count > 0):
   if crawlToastFiredRef.current === false:
     fire info toast "Indexing started"
     crawlToastFiredRef.current = true
+  NOTE: The poll loop NEVER fires the info toast.
+  If the app launches mid-crawl (status already 'crawling' on mount baseline),
+  no "Indexing started" toast fires — this is intentional. The toast is only
+  triggered by an observed progress event, not by detecting crawling status.
 
 Poll every 5s (fileIndexStatus()):
   if prevStatusRef.current === 'crawling' AND current.status === 'idle':
     fire success toast "Index ready — N,NNN files"  (N,NNN formatted with toLocaleString())
     crawlToastFiredRef.current = false  // reset for next crawl cycle
   prevStatusRef.current = current.status
+  NOTE: The poll loop only fires the success (completion) toast, never the info (start) toast.
 ```
 
 **Mount point:** `useIndexingToasts()` is called in `App.tsx`. The toast system is a pure Zustand store (`useToastStore`) — `addToast` is a store action that can be called from anywhere in or outside the React tree without any ancestor requirement. `ToastContainer` in `Shell.tsx` subscribes to `useToastStore` independently. Therefore `useIndexingToasts` mounted in `App.tsx` (the router root) dispatches toasts that `ToastContainer` in `Shell.tsx` renders correctly. Do **not** move the hook to `Shell.tsx` — `App.tsx` ensures it is always mounted regardless of which route is active.
@@ -179,25 +184,19 @@ Poll every 5s (fileIndexStatus()):
 
 ---
 
-### Task 6 — Main process unit gap-fill
+### Task 6 — fileIndexService gap-fill test
 
-**File — new: `src/main/main.test.ts`**
-
-The `FILE_INDEX_REINDEX` IPC handler lives in `main.ts`, not `fileIndexService.ts`. Test it in a new `main.test.ts` file using mocked `ipcMain` and mocked `fileIndexService`.
-
-**Test cases:**
-- When `FILE_INDEX_REINDEX` handler fires with a non-empty root (mock `store.get('connections')` to return a valid JSON string), `fileIndexService.startWatcher` is called with the correct root path
-- When `FILE_INDEX_REINDEX` handler fires with an empty root, `fileIndexService.startWatcher` is NOT called
+**`main.ts` IPC handlers are registered as module-level side effects** (`ipcMain.handle(...)` at top level, not inside an exported function). Unit-testing them in isolation would require mocking the entire Electron runtime and is disproportionate to the value. The `startWatcher`-from-reindex behavior is verified indirectly by the E2E happy path in Task 8 (configure root → reindex → search finds files → watcher is implicitly running). No `main.test.ts` is created.
 
 **File — `src/main/fileIndexService.test.ts`:**
 
 Test case to add:
-- **rootGetter live reference:** `fileIndexService` stores the `rootGetter` function supplied to `init()` as a module-level variable. `startCrawl()` reads `rootGetter()` synchronously at crawl start — it is a live call, not a value captured at `init()` time. Test this by calling `init(dbPath, () => 'pathA', null)`, then calling `init(dbPath, () => 'pathB', null)` (updating the rootGetter), then calling `reindex()`. Assert the crawl uses `'pathB'` (the value returned by the most recently supplied rootGetter function, not `'pathA'` from the first `init` call). This confirms the rootGetter reference is updated on each `init` call and read fresh at crawl time.
+- **rootGetter live reference:** `fileIndexService` stores the `rootGetter` function supplied to `init()` as a module-level variable. `startCrawl()` reads `rootGetter()` synchronously at crawl start — it is a live call, not a snapshot. Test: call `init(':memory:', () => 'pathA', null)`, then call `init(':memory:', () => 'pathB', null)` (replaces the stored rootGetter), then call `reindex()`. Assert that the crawl attempts to walk `'pathB'` (e.g., `crawl_status` becomes `'error'` with an error message referencing `pathB`, since `pathB` does not exist on disk). This confirms that `init()` updates the live reference and `reindex()` uses the current value.
 
 **Do NOT add:**
 - Tests for blank-query guard (already covered)
 - Tests for stale cleanup (already covered)
-- Tests for `getStatus` returning `not-configured` when root empty (already covered at line 47–54 of existing test file)
+- Tests for `getStatus` returning `not-configured` when root empty (already covered)
 
 ---
 
@@ -222,8 +221,26 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
   reporter: 'list',
+  globalSetup: './e2e/globalSetup.ts',
 })
 ```
+
+**`e2e/globalSetup.ts`:**
+```ts
+import fs from 'node:fs'
+import path from 'node:path'
+export default function globalSetup() {
+  const mainEntry = path.resolve(__dirname, '../.vite/build/main.js')
+  if (!fs.existsSync(mainEntry)) {
+    throw new Error(
+      `E2E prerequisite missing: ${mainEntry}\n` +
+      `Run "npm start" once (then Ctrl+C) to generate the compiled output before running tests.`
+    )
+  }
+}
+```
+
+This provides a clear, actionable error instead of a cryptic file-not-found crash when the build output is missing.
 
 **`e2e/fixtures/launchApp.ts`:**
 
@@ -278,6 +295,9 @@ Test: `"full happy path: launch → configure → index → search → open"`
     an intermediate "crawling" state. Assert only the final idle success toast.
 9.  Click search input, type "C-101"
 10. Wait for results list to contain at least one item (max 5s)
+    Selector: `page.locator('[data-testid="search-result-item"]').first()`
+    `data-testid="search-result-item"` must be added to each result row element
+    in `SearchResults.tsx` as part of Task 8. This is a targeted, non-visual addition.
 11. Assert at least one result contains text "C-101" (drawing number badge)
 12. Before clicking the result, inject a shell.openPath spy into the main process:
     ```ts
@@ -295,6 +315,10 @@ Test: `"full happy path: launch → configure → index → search → open"`
     module is directly accessible. This replaces `shell.openPath` (called by
     `fileIndexService.openFile` which is invoked by the FILE_INDEX_OPEN IPC handler)
     with a spy that captures the opened path.
+    **Why this works:** `fileIndexService.ts` imports `shell` as a module object
+    (`import { shell } from 'electron'`) and calls `shell.openPath(filePath)` at
+    invocation time — not via a captured destructured reference. Replacing
+    `shell.openPath` on the object intercepts the call correctly.
 13. Click the first result
 14. Read back the captured path:
     ```ts
