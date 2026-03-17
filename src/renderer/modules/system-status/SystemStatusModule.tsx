@@ -40,6 +40,19 @@ function indexStatusToServiceStatus(s: IndexStatus): { status: ServiceStatus; de
   }
 }
 
+// Skeleton row for loading state — defined at module scope to keep a stable
+// component identity across renders (avoids react/no-unstable-nested-components).
+function SkeletonRow({ isLast }: { isLast: boolean }) {
+  return (
+    <tr className={isLast ? '' : 'border-b border-border'}>
+      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-20" /></td>
+      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-16" /></td>
+      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-24" /></td>
+      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-14" /></td>
+    </tr>
+  )
+}
+
 export default function SystemStatusModule() {
   const [isLoading, setIsLoading] = useState(true)
   const [tick, setTick] = useState(0) // increments every 30s to re-render humanized timestamps
@@ -94,16 +107,6 @@ export default function SystemStatusModule() {
     { name: 'AI Services', status: 'not-configured', detail: '', lastCheckedMs },
     { name: 'Backend API', status: 'not-configured', detail: '', lastCheckedMs },
   ]
-
-  // Skeleton row for loading state
-  const SkeletonRow = ({ isLast }: { isLast: boolean }) => (
-    <tr className={isLast ? '' : 'border-b border-border'}>
-      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-20" /></td>
-      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-16" /></td>
-      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-24" /></td>
-      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-14" /></td>
-    </tr>
-  )
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-6">
