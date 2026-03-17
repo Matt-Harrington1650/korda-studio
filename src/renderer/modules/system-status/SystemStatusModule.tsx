@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw } from 'lucide-react'
 import type { IndexStatus } from '../../../shared/ipc-types'
+import { humanizeAge } from '../../shared/utils/humanizeAge'
 
 type ServiceStatus = 'connected' | 'unreachable' | 'not-configured' | 'indexing'
 
@@ -8,7 +9,7 @@ interface Service {
   name: string
   status: ServiceStatus
   detail: string
-  lastChecked: Date
+  lastCheckedMs: number
 }
 
 const statusColors: Record<ServiceStatus, string> = {
@@ -28,9 +29,7 @@ const statusLabels: Record<ServiceStatus, string> = {
 function indexStatusToServiceStatus(s: IndexStatus): { status: ServiceStatus; detail: string } {
   switch (s.status) {
     case 'idle':
-      return s.fileCount > 0
-        ? { status: 'connected', detail: `${s.fileCount.toLocaleString()} files indexed` }
-        : { status: 'not-configured', detail: '' }
+      return { status: 'connected', detail: `${s.fileCount.toLocaleString()} files indexed` }
     case 'crawling':
       return { status: 'indexing', detail: `${s.fileCount.toLocaleString()} files…` }
     case 'error':
@@ -42,12 +41,14 @@ function indexStatusToServiceStatus(s: IndexStatus): { status: ServiceStatus; de
 }
 
 export default function SystemStatusModule() {
+  const [isLoading, setIsLoading] = useState(true)
+  const [tick, setTick] = useState(0) // increments every 30s to re-render humanized timestamps
   const [networkStatus, setNetworkStatus] = useState<ServiceStatus>(
     navigator.onLine ? 'connected' : 'unreachable',
   )
   const [fileServerStatus, setFileServerStatus] = useState<ServiceStatus>('not-configured')
   const [fileServerDetail, setFileServerDetail] = useState('')
-  const [lastChecked, setLastChecked] = useState(new Date())
+  const [lastCheckedMs, setLastCheckedMs] = useState(Date.now())
 
   const refreshFileServer = useCallback(async () => {
     try {
@@ -59,13 +60,13 @@ export default function SystemStatusModule() {
       setFileServerStatus('unreachable')
       setFileServerDetail('')
     }
-    setLastChecked(new Date())
+    setLastCheckedMs(Date.now())
+    setIsLoading(false)
   }, [])
 
   const refresh = useCallback(() => {
     setNetworkStatus(navigator.onLine ? 'connected' : 'unreachable')
     refreshFileServer()
-    setLastChecked(new Date())
   }, [refreshFileServer])
 
   useEffect(() => {
@@ -80,12 +81,29 @@ export default function SystemStatusModule() {
     }
   }, [refreshFileServer])
 
+  // Tick every 30s to re-render the humanized "last checked" timestamp
+  // Does NOT call fileIndexStatus() — only forces a re-render
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
   const services: Service[] = [
-    { name: 'Network', status: networkStatus, detail: '', lastChecked },
-    { name: 'File Server', status: fileServerStatus, detail: fileServerDetail, lastChecked },
-    { name: 'AI Services', status: 'not-configured', detail: '', lastChecked },
-    { name: 'Backend API', status: 'not-configured', detail: '', lastChecked },
+    { name: 'Network', status: networkStatus, detail: '', lastCheckedMs },
+    { name: 'File Server', status: fileServerStatus, detail: fileServerDetail, lastCheckedMs },
+    { name: 'AI Services', status: 'not-configured', detail: '', lastCheckedMs },
+    { name: 'Backend API', status: 'not-configured', detail: '', lastCheckedMs },
   ]
+
+  // Skeleton row for loading state
+  const SkeletonRow = ({ isLast }: { isLast: boolean }) => (
+    <tr className={isLast ? '' : 'border-b border-border'}>
+      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-20" /></td>
+      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-16" /></td>
+      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-24" /></td>
+      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-14" /></td>
+    </tr>
+  )
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-6">
@@ -112,23 +130,36 @@ export default function SystemStatusModule() {
             </tr>
           </thead>
           <tbody>
-            {services.map((service, i) => (
-              <tr key={service.name} className={i < services.length - 1 ? 'border-b border-border' : ''}>
-                <td className="px-4 py-3 text-sm text-text-primary">{service.name}</td>
-                <td className="px-4 py-3">
-                  <span className="inline-flex items-center gap-1.5 text-xs">
-                    <span className={`w-1.5 h-1.5 rounded-full ${statusColors[service.status].split(' ')[0]}`} />
-                    <span className={statusColors[service.status].split(' ')[1]}>
-                      {statusLabels[service.status]}
+            {isLoading ? (
+              <>
+                <SkeletonRow isLast={false} />
+                <SkeletonRow isLast={false} />
+                <SkeletonRow isLast={false} />
+                <SkeletonRow isLast={true} />
+              </>
+            ) : (
+              services.map((service, i) => (
+                <tr key={service.name} className={i < services.length - 1 ? 'border-b border-border' : ''}>
+                  <td className="px-4 py-3 text-sm text-text-primary">{service.name}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-1.5 text-xs">
+                      <span className={`w-1.5 h-1.5 rounded-full ${statusColors[service.status].split(' ')[0]}`} />
+                      <span
+                        className={statusColors[service.status].split(' ')[1]}
+                        {...(service.name === 'File Server' ? { 'data-testid': 'file-server-status' } : {})}
+                      >
+                        {statusLabels[service.status]}
+                      </span>
                     </span>
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-xs text-text-secondary">{service.detail}</td>
-                <td className="px-4 py-3 text-[11px] text-text-secondary font-mono">
-                  {service.lastChecked.toLocaleTimeString()}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-text-secondary">{service.detail}</td>
+                  <td className="px-4 py-3 text-[11px] text-text-secondary font-mono">
+                    {/* tick is read here to trigger re-render every 30s */}
+                    {tick >= 0 && humanizeAge(Date.now() - service.lastCheckedMs)}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

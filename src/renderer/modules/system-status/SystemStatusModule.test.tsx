@@ -19,9 +19,11 @@ beforeEach(() => {
 })
 
 describe('SystemStatusModule', () => {
-  it('shows network connectivity status', () => {
+  it('shows network connectivity status', async () => {
     render(<SystemStatusModule />)
-    expect(screen.getByText(/network/i)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText(/network/i)).toBeInTheDocument()
+    })
   })
 
   it('has a refresh button', () => {
@@ -32,7 +34,7 @@ describe('SystemStatusModule', () => {
   it('shows File Server row as Connected when fileIndexStatus returns idle with fileCount > 0', async () => {
     render(<SystemStatusModule />)
     await waitFor(() => {
-      expect(screen.getByText(/connected/i)).toBeInTheDocument()
+      expect(screen.getAllByText(/connected/i).length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -72,6 +74,22 @@ describe('SystemStatusModule', () => {
     fireEvent.click(screen.getByRole('button', { name: /refresh/i }))
     await waitFor(() => {
       expect(mockFileIndexStatus).toHaveBeenCalledTimes(2) // once on mount, once on refresh
+    })
+  })
+
+  it('shows skeleton rows on mount before first poll resolves', () => {
+    // mockReturnValue (not mockResolvedValue) so the Promise never settles during this test
+    mockFileIndexStatus.mockReturnValue(new Promise(() => {}))
+    render(<SystemStatusModule />)
+    // Skeleton rows use animate-pulse class — visible immediately on mount
+    expect(document.querySelector('.animate-pulse')).toBeTruthy()
+  })
+
+  it('replaces skeleton rows with real data after first poll resolves', async () => {
+    render(<SystemStatusModule />)
+    await waitFor(() => {
+      expect(document.querySelector('.animate-pulse')).toBeFalsy()
+      expect(screen.getByText('File Server')).toBeInTheDocument()
     })
   })
 })
