@@ -2,7 +2,6 @@ import { app, BrowserWindow, ipcMain, screen, session, shell } from 'electron'
 import path from 'path'
 import { IPC_CHANNELS } from '../shared/ipc-types'
 import { fileIndexService } from './fileIndexService'
-import * as fsPromises from 'node:fs/promises' // TODO(debug): remove after indexing bug confirmed fixed
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string
 declare const MAIN_WINDOW_VITE_NAME: string
@@ -196,40 +195,6 @@ ipcMain.handle(IPC_CHANNELS.FILE_INDEX_REINDEX, () => {
   const root = getRoot()
   if (root) fileIndexService.startWatcher(root)
   // Resolves immediately — crawl runs in background; renderer tracks via FILE_INDEX_PROGRESS
-})
-
-// TODO(debug): remove after indexing bug confirmed fixed
-ipcMain.handle(IPC_CHANNELS.FILE_INDEX_DEBUG, async () => {
-  // store is declared without | undefined so optional chaining requires a cast; use null coalescing to normalise undefined→null
-  const rawConnections = (store?.get('connections') as string | undefined) ?? null
-  let storedRoot = ''
-  try {
-    if (rawConnections) {
-      storedRoot = (JSON.parse(rawConnections) as { fileServerRoot?: string }).fileServerRoot ?? ''
-    }
-  } catch { /* parse error */ }
-
-  let canReadDir = false
-  let dirEntryCount = -1
-  let error: string | null = null
-  try {
-    await fsPromises.access(storedRoot)
-    canReadDir = true
-    const entries = await fsPromises.readdir(storedRoot)
-    dirEntryCount = entries.length
-  } catch (err) {
-    error = String(err)
-  }
-
-  return {
-    rawConnections,
-    storedRoot,
-    canReadDir,
-    dirEntryCount,
-    currentStatus: fileIndexService.getStatus(),
-    dbPath: path.join(app.getPath('userData'), 'file-index.db'),
-    error,
-  }
 })
 
 app.whenReady().then(async () => {

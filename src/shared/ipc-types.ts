@@ -54,18 +54,6 @@ export interface KordaAPI {
   fileIndexOpen: (path: string) => Promise<string>
   fileIndexReindex: () => Promise<void>
   onFileIndexProgress: (cb: (count: number) => void) => () => void
-  fileIndexDebug: () => Promise<DebugReport> // TODO(debug): remove after indexing bug confirmed fixed
-}
-
-// TODO(debug): remove after indexing bug confirmed fixed
-export interface DebugReport {
-  rawConnections: string | null  // raw store.get('connections') — null if key absent
-  storedRoot: string             // resolved fileServerRoot, empty string if unparseable
-  canReadDir: boolean
-  dirEntryCount: number          // top-level readdir count, -1 on error
-  currentStatus: IndexStatus
-  dbPath: string
-  error: string | null
 }
 
 // Channel names as constants to prevent typos
@@ -85,5 +73,4 @@ export const IPC_CHANNELS = {
   FILE_INDEX_OPEN: 'file-index:open',
   FILE_INDEX_REINDEX: 'file-index:reindex',
   FILE_INDEX_PROGRESS: 'file-index:progress',
-  FILE_INDEX_DEBUG: 'file-index:debug', // TODO(debug): remove after indexing bug confirmed fixed
 } as const
