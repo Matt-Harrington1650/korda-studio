@@ -31,4 +31,5 @@ contextBridge.exposeInMainWorld('kordaAPI', {
     ipcRenderer.on(IPC_CHANNELS.FILE_INDEX_PROGRESS, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.FILE_INDEX_PROGRESS, handler)
   },
+  fileIndexDebug: () => ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_DEBUG), // TODO(debug): remove after indexing bug confirmed fixed
 })
