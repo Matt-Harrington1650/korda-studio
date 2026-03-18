@@ -24,6 +24,18 @@ interface StoreSchema {
 // Assigned in initStore() before createWindow()
 let store: import('electron-store').default<StoreSchema>
 
+// Reads the current file-server root from the store (live — always up to date)
+function getRoot(): string {
+  const raw = store?.get('connections') ?? ''
+  if (!raw) return ''
+  try {
+    const parsed = JSON.parse(raw as string) as { fileServerRoot?: string }
+    return parsed.fileServerRoot ?? ''
+  } catch {
+    return ''
+  }
+}
+
 async function initStore(): Promise<void> {
   const { default: Store } = await import('electron-store')
   store = new Store<StoreSchema>()
@@ -178,6 +190,10 @@ ipcMain.handle(IPC_CHANNELS.FILE_INDEX_OPEN, (_event, filePath: string) => {
 
 ipcMain.handle(IPC_CHANNELS.FILE_INDEX_REINDEX, () => {
   fileIndexService.reindex()
+  // Also (re)start the watcher with the current root so live changes are picked up
+  // even if the root was empty at app startup
+  const root = getRoot()
+  if (root) fileIndexService.startWatcher(root)
   // Resolves immediately — crawl runs in background; renderer tracks via FILE_INDEX_PROGRESS
 })
 
@@ -196,17 +212,6 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
-
-  const getRoot = (): string => {
-    const raw = store?.get('connections') ?? ''
-    if (!raw) return ''
-    try {
-      const parsed = JSON.parse(raw as string) as { fileServerRoot?: string }
-      return parsed.fileServerRoot ?? ''
-    } catch {
-      return ''
-    }
-  }
 
   fileIndexService.init(
     path.join(app.getPath('userData'), 'file-index.db'),

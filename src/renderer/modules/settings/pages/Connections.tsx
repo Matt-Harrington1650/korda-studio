@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { STORE_KEYS } from '../../../../shared/electron-store-keys'
 import type { IndexStatus } from '../../../../shared/ipc-types'
 
 export function Component() {
   const [rootPath, setRootPath] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [savedOk, setSavedOk] = useState(false)
   const [status, setStatus] = useState<IndexStatus | null>(null)
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadStatus = useCallback(async () => {
     try {
@@ -32,8 +35,15 @@ export function Component() {
     return () => clearInterval(interval)
   }, [loadStatus])
 
+  // Clear saved-ok banner after 4 s
+  useEffect(() => () => {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
+  }, [])
+
   const handleSave = async () => {
     setSaving(true)
+    setSaveError(null)
+    setSavedOk(false)
     try {
       await window.kordaAPI.storeSet(
         STORE_KEYS.CONNECTIONS,
@@ -41,6 +51,11 @@ export function Component() {
       )
       await window.kordaAPI.fileIndexReindex()
       await loadStatus()
+      setSavedOk(true)
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
+      savedTimerRef.current = setTimeout(() => setSavedOk(false), 4_000)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
@@ -80,14 +95,22 @@ export function Component() {
           />
         </div>
 
-        <button
-          onClick={handleSave}
-          disabled={!rootPath.trim() || saving}
-          className="px-4 py-1.5 text-sm bg-accent text-white rounded
-                     hover:bg-accent/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            disabled={!rootPath.trim() || saving}
+            className="px-4 py-1.5 text-sm bg-accent text-white rounded
+                       hover:bg-accent/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          {savedOk && (
+            <span className="text-sm text-green-400">✓ Saved — indexing started</span>
+          )}
+          {saveError && (
+            <span className="text-sm text-red-400">Error: {saveError}</span>
+          )}
+        </div>
 
         {/* Status section */}
         <div className="mt-4 p-3 border border-border rounded space-y-1 text-sm text-text-secondary">

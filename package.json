@@ -19,7 +19,9 @@
     "pretest": "npm rebuild better-sqlite3",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "pretest:e2e": "electron-rebuild -v 41.0.2 --force",
+    "test:e2e": "playwright test",
+    "posttest:e2e": "npm rebuild better-sqlite3"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -46,6 +48,7 @@
     "@electron-forge/plugin-fuses": "^7.11.1",
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron/fuses": "^1.8.0",
+    "@electron/rebuild": "^3.7.2",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.9.1",

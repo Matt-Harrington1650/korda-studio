@@ -63,6 +63,7 @@ export function SearchResults({ results, onOpenError }: Props) {
         return (
           <li
             key={entry.path}
+            data-testid="search-result-item"
             onClick={() => handleOpen(entry)}
             className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-raised cursor-pointer group"
             role="listitem"
