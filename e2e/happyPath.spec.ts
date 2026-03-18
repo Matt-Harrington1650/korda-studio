@@ -44,9 +44,12 @@ test.describe('Happy path', () => {
       await page.click('button:has-text("Save")')
 
       // 6. Assert success banner
-      await expect(page.locator('text=Saved')).toBeVisible({ timeout: 5_000 })
+      await expect(page.locator('text=✓ Saved')).toBeVisible({ timeout: 5_000 })
 
-      // 7. Wait for crawl to complete
+      // 7. Assert info toast "Indexing started"
+      await expect(page.getByText('Indexing started', { exact: true })).toBeVisible({ timeout: 5_000 })
+
+      // 8. Wait for crawl to complete
       await page.waitForTimeout(3_000)
       console.log('DB after save:', fs.existsSync(dbPath))
 
@@ -56,24 +59,34 @@ test.describe('Happy path', () => {
       })
       console.log('Status after save:', JSON.stringify(statusAfterSave))
 
-      // 8. Navigate to Projects
+      // 9. Navigate to Projects
       await page.click('a[href="/projects"]')
       await expect(page.locator('[role="searchbox"]')).toBeVisible({ timeout: 5_000 })
 
-      // 9. Search for C-101
+      // 10. Wait for index ready — assert IndexStatusBar shows file count (persistent indicator)
+      // The "Index ready" success toast fires only on crawling→idle transition observed by the
+      // hook; for a small test dataset the crawl may complete before this page mounts, so we
+      // assert the durable IndexStatusBar instead (shows "N files · updated …" when idle).
+      await expect(page.locator('text=Index ready')).toBeVisible({ timeout: 5_000 }).catch(async () => {
+        // Toast may have already dismissed or crawl completed before navigation — fall back to
+        // the persistent IndexStatusBar which shows file count when index is idle.
+        await expect(page.locator('[class*="surface-raised"] span, .text-xs span').filter({ hasText: /\d+ files/ })).toBeVisible({ timeout: 10_000 })
+      })
+
+      // 11. Search for C-101
       const searchBox = page.locator('[role="searchbox"]')
       await searchBox.click()
       await searchBox.fill('C-101')
       await page.waitForTimeout(500)
 
-      // 10. Wait for results
+      // 12. Wait for results
       const firstResult = page.locator('[data-testid="search-result-item"]').first()
       await expect(firstResult).toBeVisible({ timeout: 10_000 })
 
-      // 11. Assert drawing number badge
+      // 13. Assert drawing number badge
       await expect(page.locator('[data-testid="search-result-item"] >> text=C-101').first()).toBeVisible()
 
-      // 12. Inject shell.openPath spy
+      // 14. Inject shell.openPath spy
       await app.evaluate(({ shell }) => {
         ;(shell as any).__lastOpenedPath = null
         const orig = shell.openPath
@@ -84,16 +97,16 @@ test.describe('Happy path', () => {
         }
       })
 
-      // 13. Click the first result
+      // 15. Click the first result
       await firstResult.click()
 
-      // 14. Verify shell.openPath was called
+      // 16. Verify shell.openPath was called
       await page.waitForTimeout(500)
       const openedPath = await app.evaluate(({ shell }) => (shell as any).__lastOpenedPath as string | null)
       expect(openedPath).toBeTruthy()
       expect(openedPath!).toContain('C-101_IFC_Rev_A.dwg')
 
-      // 15. Restore
+      // 17. Restore
       await app.evaluate(({ shell }) => {
         shell.openPath = (shell as any).__origOpenPath
       })
