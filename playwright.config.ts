@@ -5,4 +5,5 @@ export default defineConfig({
   timeout: 30_000,
   reporter: 'list',
   globalSetup: './e2e/globalSetup.ts',
+  workers: 1,
 })
