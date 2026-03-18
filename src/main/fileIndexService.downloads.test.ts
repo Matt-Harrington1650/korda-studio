@@ -24,7 +24,11 @@ import type { BrowserWindow } from 'electron'
 
 const DOWNLOADS = 'C:\\Users\\mharrington\\Downloads'
 const tempDbPath = path.join(os.tmpdir(), `korda-debug-${Date.now()}.db`)
-const mockWin = { webContents: { send: vi.fn() } } as unknown as BrowserWindow
+// Use a plain counter to survive vitest's clearMocks: true between each it()
+let progressCallCount = 0
+const mockWin = {
+  webContents: { send: vi.fn((..._args: unknown[]) => { progressCallCount++ }) },
+} as unknown as BrowserWindow
 
 describe.skipIf(!!process.env.CI)('fileIndexService — Downloads integration', () => {
   beforeAll(async () => {
@@ -56,6 +60,7 @@ describe.skipIf(!!process.env.CI)('fileIndexService — Downloads integration', 
   })
 
   it('progress events were emitted during crawl', () => {
-    expect(mockWin.webContents.send).toHaveBeenCalled()
+    // progressCallCount is a plain variable; it survives vitest's clearMocks: true
+    expect(progressCallCount).toBeGreaterThan(0)
   })
 })
