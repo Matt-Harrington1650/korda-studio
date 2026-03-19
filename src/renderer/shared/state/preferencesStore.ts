@@ -19,6 +19,8 @@ interface PreferencesState {
   addBookmark: (bookmark: Bookmark) => void
   updateBookmark: (id: string, updates: Partial<Omit<Bookmark, 'id'>>) => void
   removeBookmark: (id: string) => void
+  pinnedProjects: string[]
+  setPinnedProjects: (projects: string[]) => void
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -28,6 +30,8 @@ export const usePreferencesStore = create<PreferencesState>()(
         displayName: '',
         sidebarCollapsed: false,
         bookmarks: [],
+        pinnedProjects: [],
+        setPinnedProjects: (projects) => set({ pinnedProjects: projects }),
         setDisplayName: (name) => set({ displayName: name }),
         toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
         addBookmark: (bookmark) => set((state) => ({ bookmarks: [...state.bookmarks, bookmark] })),

@@ -11,6 +11,7 @@ describe('preferencesStore', () => {
       displayName: '',
       sidebarCollapsed: false,
       bookmarks: [],
+      pinnedProjects: [],
     })
   })
 
@@ -31,5 +32,17 @@ describe('preferencesStore', () => {
     expect(usePreferencesStore.getState().sidebarCollapsed).toBe(true)
     usePreferencesStore.getState().toggleSidebar()
     expect(usePreferencesStore.getState().sidebarCollapsed).toBe(false)
+  })
+})
+
+describe('pinnedProjects', () => {
+  it('defaults to empty array', () => {
+    const { pinnedProjects } = usePreferencesStore.getState()
+    expect(pinnedProjects).toEqual([])
+  })
+
+  it('setPinnedProjects updates the list', () => {
+    usePreferencesStore.getState().setPinnedProjects(['ProjectA', 'ProjectB'])
+    expect(usePreferencesStore.getState().pinnedProjects).toEqual(['ProjectA', 'ProjectB'])
   })
 })
