@@ -16,6 +16,7 @@ export interface FileEntry {
   sizeBytes: number
   modifiedMs: number
   isDir: boolean
+  sourceId: string | null // present in all search results; null for legacy rows
   project: string | null
   discipline: string | null
   docType: string | null

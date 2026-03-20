@@ -34,6 +34,23 @@ beforeEach(() => {
     fileIndexOpen: mockFileIndexOpen,
     fileIndexReindex: mockFileIndexReindex,
     onFileIndexProgress: mockOnFileIndexProgress,
+    fileIndexSourcesList: vi.fn().mockResolvedValue([
+      {
+        id: 'a',
+        displayName: 'Server A',
+        path: '\\\\srv\\a',
+        type: 'network-share',
+        enabled: true,
+      },
+      {
+        id: 'b',
+        displayName: 'Server B',
+        path: '\\\\srv\\b',
+        type: 'network-share',
+        enabled: true,
+      },
+    ]),
+    fileIndexProjectsList: vi.fn().mockResolvedValue(['ProjectA', 'ProjectB']),
   })
 })
 
@@ -51,10 +68,10 @@ describe('ProjectsModule', () => {
   })
 
   it('shows "not configured" empty state when root is not configured', async () => {
-    mockFileIndexStatus.mockResolvedValue([])
+    ;(window.kordaAPI.fileIndexSourcesList as ReturnType<typeof vi.fn>).mockResolvedValue([])
     render(<ProjectsModule />)
     await waitFor(() => {
-      expect(screen.getByText(/file server not configured/i)).toBeInTheDocument()
+      expect(screen.getByText(/no file sources configured/i)).toBeInTheDocument()
     })
   })
 
@@ -153,5 +170,38 @@ describe('ProjectsModule', () => {
     })
     resolveSearch([])
     vi.useRealTimers()
+  })
+})
+
+describe('ProjectsModule source scope', () => {
+  it('shows All Sources option plus one per source when >1 source', async () => {
+    render(<ProjectsModule />)
+    const dropdown = await screen.findByRole('combobox', { name: /source scope/i })
+    expect(dropdown).toBeInTheDocument()
+    expect(screen.getByText('All Sources')).toBeInTheDocument()
+    expect(screen.getByText('Server A')).toBeInTheDocument()
+  })
+
+  it('does not show scope dropdown when only 1 source', async () => {
+    ;(window.kordaAPI.fileIndexSourcesList as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'a',
+        displayName: 'Server A',
+        path: '\\\\srv\\a',
+        type: 'network-share',
+        enabled: true,
+      },
+    ])
+    render(<ProjectsModule />)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByRole('combobox', { name: /source scope/i })).toBeNull()
+  })
+})
+
+describe('ProjectsModule project selector', () => {
+  it('loads and shows available projects', async () => {
+    render(<ProjectsModule />)
+    expect(await screen.findByRole('listbox', { name: /project filter/i })).toBeInTheDocument()
+    expect(screen.getByText('ProjectA')).toBeInTheDocument()
   })
 })
