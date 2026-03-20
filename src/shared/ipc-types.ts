@@ -25,15 +25,6 @@ export interface FileEntry {
   issueStatus: string | null
 }
 
-/** @deprecated Use SourceStatus[] from file-sources instead */
-export interface IndexStatus {
-  status: 'idle' | 'crawling' | 'error' | 'not-configured'
-  fileCount: number
-  lastCrawledMs: number | null
-  rootPath: string
-  crawlError: string | null
-}
-
 export interface SearchParams {
   query: string
   sourceId?: string // omit to search all sources

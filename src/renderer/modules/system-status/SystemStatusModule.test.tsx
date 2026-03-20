@@ -4,15 +4,25 @@ import SystemStatusModule from './SystemStatusModule'
 
 const mockFileIndexStatus = vi.fn()
 
+function makeSourceStatuses(status: string, fileCount = 5000, crawlError: string | null = null) {
+  return [
+    {
+      sourceId: 'src-1',
+      displayName: 'Main Server',
+      path: '\\\\SERVER\\projects',
+      type: 'network-share',
+      online: status !== 'error',
+      status,
+      fileCount,
+      lastCrawledMs: Date.now(),
+      crawlError,
+    },
+  ]
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
-  mockFileIndexStatus.mockResolvedValue({
-    status: 'idle',
-    fileCount: 5000,
-    lastCrawledMs: Date.now(),
-    rootPath: '\\\\SERVER\\projects',
-    crawlError: null,
-  })
+  mockFileIndexStatus.mockResolvedValue(makeSourceStatuses('idle'))
   vi.stubGlobal('kordaAPI', {
     fileIndexStatus: mockFileIndexStatus,
   })
@@ -39,9 +49,7 @@ describe('SystemStatusModule', () => {
   })
 
   it('shows File Server row as Indexing when status is crawling', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'crawling', fileCount: 100, lastCrawledMs: null, rootPath: '\\\\SERVER\\projects', crawlError: null,
-    })
+    mockFileIndexStatus.mockResolvedValue(makeSourceStatuses('crawling', 100))
     render(<SystemStatusModule />)
     await waitFor(() => {
       expect(screen.getByText(/indexing/i)).toBeInTheDocument()
@@ -49,9 +57,7 @@ describe('SystemStatusModule', () => {
   })
 
   it('shows File Server row as Unreachable when status is error', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'error', fileCount: 0, lastCrawledMs: null, rootPath: '\\\\SERVER\\projects', crawlError: 'ENOENT',
-    })
+    mockFileIndexStatus.mockResolvedValue(makeSourceStatuses('error', 0, 'ENOENT'))
     render(<SystemStatusModule />)
     await waitFor(() => {
       expect(screen.getByText(/unreachable/i)).toBeInTheDocument()
@@ -59,9 +65,7 @@ describe('SystemStatusModule', () => {
   })
 
   it('shows File Server row as Not Configured when status is not-configured', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'not-configured', fileCount: 0, lastCrawledMs: null, rootPath: '', crawlError: null,
-    })
+    mockFileIndexStatus.mockResolvedValue(makeSourceStatuses('not-configured', 0))
     render(<SystemStatusModule />)
     await waitFor(() => {
       expect(screen.getAllByText(/not configured/i).length).toBeGreaterThanOrEqual(1)

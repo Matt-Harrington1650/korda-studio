@@ -1,175 +1,84 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { Component } from './Connections'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { Component as Connections } from './Connections'
+import type { FileSource, SourceStatus } from '../../../../shared/ipc-types'
 
-const mockStoreSet = vi.fn()
-const mockFileIndexReindex = vi.fn()
-const mockFileIndexStatus = vi.fn()
+const source1: FileSource = {
+  id: 'src-1',
+  displayName: 'Main Server',
+  path: '\\\\SERVER\\share',
+  type: 'network-share',
+  enabled: true,
+}
+const source2: FileSource = {
+  id: 'src-2',
+  displayName: 'Local Projects',
+  path: 'C:\\Projects',
+  type: 'local',
+  enabled: true,
+}
+const status1: SourceStatus = {
+  sourceId: 'src-1',
+  displayName: 'Main Server',
+  path: '\\\\SERVER\\share',
+  type: 'network-share',
+  online: true,
+  status: 'idle',
+  fileCount: 1234,
+  lastCrawledMs: Date.now() - 3600_000,
+  crawlError: null,
+}
 
 beforeEach(() => {
-  vi.clearAllMocks()
-  mockFileIndexStatus.mockResolvedValue({
-    status: 'idle',
-    fileCount: 1234,
-    lastCrawledMs: Date.now() - 120_000, // 2 minutes ago
-    rootPath: '',
-    crawlError: null,
-  })
+  // Initialize window.kordaAPI with stub functions so vi.spyOn can work
   vi.stubGlobal('kordaAPI', {
-    storeGet: vi.fn().mockResolvedValue(null),
-    storeSet: mockStoreSet.mockResolvedValue(undefined),
-    fileIndexReindex: mockFileIndexReindex.mockResolvedValue(undefined),
-    fileIndexStatus: mockFileIndexStatus,
+    fileIndexSourcesList: vi.fn().mockResolvedValue([source1]),
+    fileIndexStatus: vi.fn().mockResolvedValue([status1]),
+    fileIndexSourceSave: vi.fn().mockResolvedValue(undefined),
+    fileIndexSourceDelete: vi.fn().mockResolvedValue(null),
+    fileIndexReindex: vi.fn().mockResolvedValue(undefined),
   })
 })
 
 describe('Connections page', () => {
-  afterEach(() => {
-    vi.useRealTimers()
+  it('renders the list of sources with their display names', async () => {
+    vi.spyOn(window.kordaAPI, 'fileIndexSourcesList').mockResolvedValue([source1, source2])
+    render(<Connections />)
+    expect(await screen.findByText('Main Server')).toBeInTheDocument()
+    expect(screen.getByText('Local Projects')).toBeInTheDocument()
   })
 
-  it('renders the File Server section with a root path input', () => {
-    render(<Component />)
-    expect(screen.getByText('File Server')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/\\\\SERVER\\projects/i)).toBeInTheDocument()
+  it('shows file count from source status', async () => {
+    render(<Connections />)
+    const matches = await screen.findAllByText(/1,234/)
+    expect(matches.length).toBeGreaterThan(0)
   })
 
-  it('Save button is disabled when input is empty', () => {
-    render(<Component />)
-    expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
-  })
-
-  it('Save button is enabled when input has a value', async () => {
-    render(<Component />)
-    const input = screen.getByPlaceholderText(/\\\\SERVER\\projects/i)
-    fireEvent.change(input, { target: { value: '\\\\SERVER\\projects' } })
-    expect(screen.getByRole('button', { name: /save/i })).not.toBeDisabled()
-  })
-
-  it('Save calls storeSet with connections JSON and then fileIndexReindex', async () => {
-    render(<Component />)
-    const input = screen.getByPlaceholderText(/\\\\SERVER\\projects/i)
-    fireEvent.change(input, { target: { value: '\\\\SERVER\\projects' } })
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
-
+  it('delete button calls fileIndexSourceDelete then reloads', async () => {
+    render(<Connections />)
+    const deleteBtn = await screen.findByRole('button', { name: /delete/i })
+    fireEvent.click(deleteBtn)
     await waitFor(() => {
-      expect(mockStoreSet).toHaveBeenCalledWith(
-        'connections',
-        JSON.stringify({ fileServerRoot: '\\\\SERVER\\projects' }),
-      )
-      expect(mockFileIndexReindex).toHaveBeenCalled()
+      expect(window.kordaAPI.fileIndexSourceDelete).toHaveBeenCalledWith('src-1')
     })
   })
 
-  it('shows file count and last crawled time from fileIndexStatus', async () => {
-    render(<Component />)
+  it('shows toast when delete returns error string', async () => {
+    vi.spyOn(window.kordaAPI, 'fileIndexSourceDelete').mockResolvedValue(
+      'Source is currently indexing — please wait',
+    )
+    render(<Connections />)
+    const deleteBtn = await screen.findByRole('button', { name: /delete/i })
+    fireEvent.click(deleteBtn)
+    expect(await screen.findByText(/currently indexing/i)).toBeInTheDocument()
+  })
+
+  it('Reindex All button calls fileIndexReindex with no sourceId', async () => {
+    render(<Connections />)
+    const btn = await screen.findByRole('button', { name: /reindex all/i })
+    fireEvent.click(btn)
     await waitFor(() => {
-      expect(screen.getByText(/1,234/)).toBeInTheDocument()
+      expect(window.kordaAPI.fileIndexReindex).toHaveBeenCalledWith(undefined)
     })
-  })
-
-  it('Re-index button calls fileIndexReindex', async () => {
-    render(<Component />)
-    await waitFor(() => screen.getByRole('button', { name: /re.?index/i }))
-    fireEvent.click(screen.getByRole('button', { name: /re.?index/i }))
-    await waitFor(() => expect(mockFileIndexReindex).toHaveBeenCalled())
-  })
-
-  it('shows success banner after save', async () => {
-    render(<Component />)
-    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
-      target: { value: 'C:\\projects' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
-    await waitFor(() =>
-      expect(screen.getByText(/✓ Saved/i)).toBeInTheDocument()
-    )
-  })
-
-  it('success banner disappears after 4 seconds', async () => {
-    vi.useFakeTimers()
-    render(<Component />)
-    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
-      target: { value: 'C:\\projects' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
-    await waitFor(() => expect(screen.getByText(/✓ Saved/i)).toBeInTheDocument())
-    await act(async () => { vi.advanceTimersByTime(4_001) })
-    expect(screen.queryByText(/✓ Saved/i)).not.toBeInTheDocument()
-  })
-
-  it('shows error message when storeSet rejects', async () => {
-    mockStoreSet.mockRejectedValue(new Error('disk full'))
-    render(<Component />)
-    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
-      target: { value: 'C:\\projects' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
-    await waitFor(() =>
-      expect(screen.getByText(/disk full/i)).toBeInTheDocument()
-    )
-  })
-
-  it('shows error message when fileIndexReindex rejects', async () => {
-    mockFileIndexReindex.mockRejectedValue(new Error('IPC failed'))
-    render(<Component />)
-    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
-      target: { value: 'C:\\projects' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
-    await waitFor(() =>
-      expect(screen.getByText(/IPC failed/i)).toBeInTheDocument()
-    )
-  })
-
-  it('banner and error are mutually exclusive — no error on success', async () => {
-    render(<Component />)
-    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
-      target: { value: 'C:\\projects' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
-    await waitFor(() => expect(screen.getByText(/✓ Saved/i)).toBeInTheDocument())
-    expect(screen.queryByText(/Error:/i)).not.toBeInTheDocument()
-  })
-
-  it('Save button shows "Saving…" while IPC in-flight', async () => {
-    // Delay resolution so we can observe the in-flight state
-    let resolve!: () => void
-    mockStoreSet.mockReturnValue(new Promise<void>((r) => { resolve = r }))
-    render(<Component />)
-    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
-      target: { value: 'C:\\projects' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
-    // Use waitFor — React 19 state updates are async and may not flush synchronously after fireEvent
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /saving/i })).toBeInTheDocument()
-    )
-    resolve()
-    await waitFor(() => expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument())
-  })
-
-  it('Save button is re-enabled after save completes', async () => {
-    render(<Component />)
-    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
-      target: { value: 'C:\\projects' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /save/i })).not.toBeDisabled()
-    )
-  })
-
-  it('storeSet is called before fileIndexReindex', async () => {
-    const callOrder: string[] = []
-    mockStoreSet.mockImplementation(async () => { callOrder.push('storeSet') })
-    mockFileIndexReindex.mockImplementation(async () => { callOrder.push('reindex') })
-    render(<Component />)
-    fireEvent.change(screen.getByPlaceholderText(/\\\\SERVER\\projects/i), {
-      target: { value: 'C:\\projects' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
-    await waitFor(() => expect(callOrder).toHaveLength(2))
-    expect(callOrder).toEqual(['storeSet', 'reindex'])
   })
 })
