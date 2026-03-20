@@ -126,7 +126,9 @@ function runMigrations(): void {
           UNIQUE(folder_name, source_id)
         )
       `)
-      db!.exec(`INSERT INTO projects SELECT *, 'default' AS source_id FROM projects_old`)
+      db!.exec(
+        `INSERT INTO projects (id, folder_name, source_id, display_name, client, status, file_count, last_modified_ms, first_seen_ms) SELECT id, folder_name, 'default', display_name, client, status, file_count, last_modified_ms, first_seen_ms FROM projects_old`,
+      )
       db!.exec(`DROP TABLE projects_old`)
     })()
   }
@@ -341,12 +343,11 @@ export const fileIndexService = {
     const source = sources.find((s) => s.id === sourceId)
     if (!source || !source.enabled) return
 
-    const state = sourceStates.get(sourceId) ?? {
-      watcher: null,
-      retries: 0,
-      online: true,
-      crawling: false,
-    }
+    // Guard against concurrent crawls for the same source
+    const existing = sourceStates.get(sourceId)
+    if (existing?.crawling) return
+
+    const state = existing ?? { watcher: null, retries: 0, online: true, crawling: false }
     state.crawling = true
     sourceStates.set(sourceId, state)
 
@@ -501,11 +502,14 @@ export const fileIndexService = {
     const existing = sourceStates.get(source.id)
     if (existing?.watcher) existing.watcher.close()
 
+    // Do not copy crawling from existing — crawl lifecycle is independent of watcher lifecycle.
+    // If existing?.crawling is true, the in-flight crawlSource holds a direct ref to the old
+    // state object and will set its crawling=false in finally. The new map entry starts fresh.
     const state: SourceState = {
       watcher: null,
       retries: 0,
       online: true,
-      crawling: existing?.crawling ?? false,
+      crawling: false,
     }
     sourceStates.set(source.id, state)
 
@@ -615,7 +619,11 @@ export const fileIndexService = {
     if (!db) return
     db.prepare('DELETE FROM files WHERE source_id = ?').run(sourceId)
     db.prepare('DELETE FROM projects WHERE source_id = ?').run(sourceId)
-    db.prepare('DELETE FROM index_meta WHERE key LIKE ?').run(`%:${sourceId}`)
+    // Use explicit key list to avoid LIKE wildcard ambiguity
+    const stmt = db.prepare('DELETE FROM index_meta WHERE key = ?')
+    for (const k of ['crawl_status', 'last_crawl_ms', 'crawl_error', 'file_count']) {
+      stmt.run(`${k}:${sourceId}`)
+    }
   },
 
   listProjects(sourceId?: string): string[] {
