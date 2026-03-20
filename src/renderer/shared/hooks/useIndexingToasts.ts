@@ -10,7 +10,8 @@ function aggregateStatus(statuses: SourceStatus[]): AggregateStatus {
   if (statuses.length === 0) return null
   if (statuses.some((s) => s.status === 'crawling')) return 'crawling'
   if (statuses.some((s) => s.status === 'error')) return 'error'
-  if (statuses.every((s) => s.status === 'not-configured')) return 'not-configured'
+  if (statuses.every((s) => s.status === 'not-configured' || s.status === 'disabled'))
+    return 'not-configured'
   return 'idle'
 }
 

@@ -96,12 +96,16 @@ export function Component() {
   }
 
   const handleDelete = async (sourceId: string) => {
-    const result = await window.kordaAPI.fileIndexSourceDelete(sourceId)
-    if (typeof result === 'string') {
-      showToast(result)
-      return
+    try {
+      const result = await window.kordaAPI.fileIndexSourceDelete(sourceId)
+      if (typeof result === 'string') {
+        showToast(result)
+        return
+      }
+      await loadSources()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : String(err))
     }
-    await loadSources()
   }
 
   const handleReindexAll = () => window.kordaAPI.fileIndexReindex(undefined)

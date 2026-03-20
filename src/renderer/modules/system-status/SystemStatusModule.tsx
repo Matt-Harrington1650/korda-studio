@@ -36,7 +36,9 @@ function sourceStatusesToServiceStatus(statuses: SourceStatus[]): {
   const totalFiles = statuses.reduce((n, s) => n + s.fileCount, 0)
   const hasCrawling = statuses.some((s) => s.status === 'crawling')
   const hasError = statuses.some((s) => s.status === 'error')
-  const allNotConfigured = statuses.every((s) => s.status === 'not-configured')
+  const allNotConfigured = statuses.every(
+    (s) => s.status === 'not-configured' || s.status === 'disabled',
+  )
   if (hasCrawling) {
     return { status: 'indexing', detail: `${totalFiles.toLocaleString()} files…` }
   }

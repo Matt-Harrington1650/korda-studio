@@ -46,6 +46,7 @@ describe('Connections page', () => {
     render(<Connections />)
     expect(await screen.findByText('Main Server')).toBeInTheDocument()
     expect(screen.getByText('Local Projects')).toBeInTheDocument()
+    expect(screen.getByText('\\\\SERVER\\share')).toBeInTheDocument()
   })
 
   it('shows file count from source status', async () => {
