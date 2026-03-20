@@ -14,13 +14,19 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockFileIndexStatus.mockResolvedValue({
-    status: 'idle',
-    fileCount: 1000,
-    lastCrawledMs: Date.now(),
-    rootPath: '\\\\SERVER\\projects',
-    crawlError: null,
-  })
+  mockFileIndexStatus.mockResolvedValue([
+    {
+      sourceId: 'default',
+      displayName: 'Server',
+      path: '\\\\SERVER\\projects',
+      type: 'network-share',
+      online: true,
+      status: 'idle',
+      fileCount: 1000,
+      lastCrawledMs: Date.now(),
+      crawlError: null,
+    },
+  ])
   mockFileIndexSearch.mockResolvedValue([])
   vi.stubGlobal('kordaAPI', {
     fileIndexSearch: mockFileIndexSearch,
@@ -45,9 +51,7 @@ describe('ProjectsModule', () => {
   })
 
   it('shows "not configured" empty state when root is not configured', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'not-configured', fileCount: 0, lastCrawledMs: null, rootPath: '', crawlError: null,
-    })
+    mockFileIndexStatus.mockResolvedValue([])
     render(<ProjectsModule />)
     await waitFor(() => {
       expect(screen.getByText(/file server not configured/i)).toBeInTheDocument()
@@ -59,10 +63,12 @@ describe('ProjectsModule', () => {
     render(<ProjectsModule />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'C-101' } })
     expect(mockFileIndexSearch).not.toHaveBeenCalled()
-    act(() => { vi.advanceTimersByTime(200) })
-    await waitFor(() => expect(mockFileIndexSearch).toHaveBeenCalledWith(
-      expect.objectContaining({ query: 'C-101' })
-    ))
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
+    await waitFor(() =>
+      expect(mockFileIndexSearch).toHaveBeenCalledWith(expect.objectContaining({ query: 'C-101' })),
+    )
     vi.useRealTimers()
   })
 
@@ -86,7 +92,9 @@ describe('ProjectsModule', () => {
     vi.useFakeTimers()
     render(<ProjectsModule />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'C-101' } })
-    act(() => { vi.advanceTimersByTime(200) })
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
     await waitFor(() => {
       expect(screen.getByText('C-101_IFC.dwg')).toBeInTheDocument()
     })
@@ -97,29 +105,47 @@ describe('ProjectsModule', () => {
     mockFileIndexOpen.mockResolvedValue('')
     mockFileIndexSearch.mockResolvedValue([
       {
-        path: '\\\\SERVER\\P001\\C-101.dwg', name: 'C-101.dwg', ext: 'dwg',
-        sizeBytes: 1024, modifiedMs: Date.now(), isDir: false,
-        project: 'P001', discipline: null, docType: 'drawing',
-        drawingNumber: 'C-101', revision: null, issueStatus: null,
+        path: '\\\\SERVER\\P001\\C-101.dwg',
+        name: 'C-101.dwg',
+        ext: 'dwg',
+        sizeBytes: 1024,
+        modifiedMs: Date.now(),
+        isDir: false,
+        project: 'P001',
+        discipline: null,
+        docType: 'drawing',
+        drawingNumber: 'C-101',
+        revision: null,
+        issueStatus: null,
       },
     ])
     vi.useFakeTimers()
     render(<ProjectsModule />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'C-101' } })
-    act(() => { vi.advanceTimersByTime(200) })
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
     await waitFor(() => screen.getByText('C-101.dwg'))
     fireEvent.click(screen.getByText('C-101.dwg'))
-    await waitFor(() => expect(mockFileIndexOpen).toHaveBeenCalledWith('\\\\SERVER\\P001\\C-101.dwg'))
+    await waitFor(() =>
+      expect(mockFileIndexOpen).toHaveBeenCalledWith('\\\\SERVER\\P001\\C-101.dwg'),
+    )
     vi.useRealTimers()
   })
 
   it('shows Loader2 spinner while fileIndexSearch is in-flight', async () => {
     let resolveSearch!: (val: never[]) => void
-    mockFileIndexSearch.mockReturnValue(new Promise((r) => { resolveSearch = r }))
+    mockFileIndexSearch.mockReturnValue(
+      new Promise((r) => {
+        resolveSearch = r
+      }),
+    )
     vi.useFakeTimers()
     render(<ProjectsModule />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'test' } })
-    await act(async () => { vi.advanceTimersByTime(200) })
+    await act(async () => {
+      vi.advanceTimersByTime(200)
+    })
     // Spinner should be visible while IPC hangs
     await waitFor(() => {
       // The Loader2 icon renders with the lucide class (lucide-react maps Loader2 → lucide-loader-circle)

@@ -2,13 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Loader2 } from 'lucide-react'
 import { IndexStatusBar } from './components/IndexStatusBar'
 import { SearchResults } from './components/SearchResults'
-import type { FileEntry, IndexStatus } from '../../../shared/ipc-types'
+import type { FileEntry, SourceStatus } from '../../../shared/ipc-types'
 
 export default function ProjectsModule() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<FileEntry[]>([])
   const [loading, setLoading] = useState(false)
-  const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
+  const [sourcesLoaded, setSourcesLoaded] = useState(false)
+  const [hasSources, setHasSources] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -26,7 +27,15 @@ export default function ProjectsModule() {
 
   // Load initial status
   useEffect(() => {
-    window.kordaAPI.fileIndexStatus().then(setIndexStatus).catch(() => null)
+    window.kordaAPI
+      .fileIndexStatus()
+      .then((statuses: SourceStatus[]) => {
+        setHasSources(statuses.filter((s) => s.status !== 'disabled').length > 0)
+        setSourcesLoaded(true)
+      })
+      .catch(() => {
+        setSourcesLoaded(true)
+      })
   }, [])
 
   const runSearch = useCallback(async (q: string) => {
@@ -63,7 +72,7 @@ export default function ProjectsModule() {
     console.error('File open error:', msg)
   }
 
-  const isNotConfigured = indexStatus?.status === 'not-configured'
+  const isNotConfigured = sourcesLoaded && !hasSources
   const showSearchHint = !query.trim() && !isNotConfigured
 
   return (

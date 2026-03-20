@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw } from 'lucide-react'
-import type { IndexStatus } from '../../../../shared/ipc-types'
+import { RefreshCw, AlertTriangle, XCircle } from 'lucide-react'
+import type { SourceStatus } from '../../../../shared/ipc-types'
 import { humanizeAge } from '../../../shared/utils/humanizeAge'
 
 interface Props {
@@ -8,14 +8,15 @@ interface Props {
 }
 
 export function IndexStatusBar({ onReindex }: Props) {
-  const [status, setStatus] = useState<IndexStatus | null>(null)
+  const [statuses, setStatuses] = useState<SourceStatus[]>([])
   const [liveCount, setLiveCount] = useState<number | null>(null)
 
   const refresh = useCallback(async () => {
     try {
       const s = await window.kordaAPI.fileIndexStatus()
-      setStatus(s)
-      if (s.status !== 'crawling') setLiveCount(null)
+      setStatuses(s)
+      const anyCrawling = s.some((x) => x.status === 'crawling')
+      if (!anyCrawling) setLiveCount(null)
     } catch {
       // ignore
     }
@@ -23,51 +24,67 @@ export function IndexStatusBar({ onReindex }: Props) {
 
   useEffect(() => {
     refresh()
-
-    // Poll every 30s when idle
     const interval = setInterval(refresh, 30_000)
-
-    // Subscribe to progress events during crawl
     const unsubscribe = window.kordaAPI.onFileIndexProgress((count) => {
       setLiveCount(count)
+      refresh()
     })
-
     return () => {
       clearInterval(interval)
       unsubscribe()
     }
   }, [refresh])
 
-  if (!status || status.status === 'not-configured') return null
+  const enabled = statuses.filter((s) => s.status !== 'disabled')
+  if (enabled.length === 0) return null
 
-  const isCrawling = status.status === 'crawling'
-  const isError = status.status === 'error'
-  const count = liveCount ?? status.fileCount
+  const anyCrawling = enabled.some((s) => s.status === 'crawling') || liveCount !== null
+  // Keep sets mutually exclusive to avoid rendering the same source twice
+  const offlineSources = enabled.filter((s) => !s.online)
+  const errorSources = enabled.filter((s) => s.status === 'error' && s.online)
+  const totalFiles = enabled.reduce((sum, s) => sum + s.fileCount, 0)
+  const displayCount = liveCount ?? totalFiles
+  const oldestCrawl = enabled.reduce(
+    (oldest, s) =>
+      s.lastCrawledMs && (!oldest || s.lastCrawledMs < oldest) ? s.lastCrawledMs : oldest,
+    null as number | null,
+  )
 
   return (
     <div className="flex items-center justify-between px-4 py-1.5 bg-surface-raised border-b border-border text-xs text-text-secondary">
-      <div className="flex items-center gap-2">
-        {isCrawling && (
-          <RefreshCw size={10} className="animate-spin text-accent" />
-        )}
-        {isCrawling ? (
-          <span>Indexing… {count.toLocaleString()} files</span>
-        ) : isError ? (
-          <span className="text-error">File server unreachable</span>
+      <div className="flex items-center gap-2 flex-wrap">
+        {anyCrawling && <RefreshCw size={10} className="animate-spin text-accent" />}
+        {anyCrawling ? (
+          <span>Indexing… {displayCount.toLocaleString()} files</span>
+        ) : errorSources.length > 0 ? (
+          errorSources.map((s) => (
+            <span
+              key={s.sourceId}
+              className="text-error flex items-center gap-1"
+              title={s.crawlError ?? undefined}
+            >
+              <XCircle size={10} />
+              {s.displayName} unreachable
+            </span>
+          ))
         ) : (
           <span>
-            {count.toLocaleString()} files
-            {status.lastCrawledMs
-              ? ` · updated ${humanizeAge(Date.now() - status.lastCrawledMs)}`
-              : ''}
+            {displayCount.toLocaleString()} files across {enabled.length} source
+            {enabled.length !== 1 ? 's' : ''}
+            {oldestCrawl ? ` · updated ${humanizeAge(Date.now() - oldestCrawl)}` : ''}
           </span>
         )}
+        {offlineSources.length > 0 &&
+          !anyCrawling &&
+          offlineSources.map((s) => (
+            <span key={s.sourceId} className="text-amber-400 flex items-center gap-1 ml-2">
+              <AlertTriangle size={10} />
+              {s.displayName} offline
+            </span>
+          ))}
       </div>
-      {isError && (
-        <button
-          onClick={onReindex}
-          className="text-xs underline hover:text-text-primary"
-        >
+      {(errorSources.length > 0 || offlineSources.length > 0) && (
+        <button onClick={onReindex} className="text-xs underline hover:text-text-primary">
           Retry
         </button>
       )}
