@@ -23,12 +23,19 @@ contextBridge.exposeInMainWorld('kordaAPI', {
   fileIndexSearch: (params: import('../shared/ipc-types').SearchParams) =>
     ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_SEARCH, params),
   fileIndexStatus: () => ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_STATUS),
-  fileIndexOpen: (filePath: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_OPEN, filePath),
-  fileIndexReindex: () => ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_REINDEX),
+  fileIndexOpen: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_OPEN, filePath),
+  fileIndexReindex: (sourceId?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_REINDEX, sourceId),
   onFileIndexProgress: (cb: (count: number) => void) => {
     const handler = (_: Electron.IpcRendererEvent, count: number) => cb(count)
     ipcRenderer.on(IPC_CHANNELS.FILE_INDEX_PROGRESS, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.FILE_INDEX_PROGRESS, handler)
   },
+  fileIndexSourcesList: () => ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_SOURCES_LIST),
+  fileIndexSourceSave: (source: import('../shared/file-sources').FileSource) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_SOURCE_SAVE, source),
+  fileIndexSourceDelete: (sourceId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_SOURCE_DELETE, sourceId),
+  fileIndexProjectsList: (sourceId?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_PROJECTS_LIST, sourceId),
 })
