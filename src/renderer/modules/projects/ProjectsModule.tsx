@@ -90,8 +90,9 @@ export default function ProjectsModule() {
   const handleSourceChange = (sourceId: string) => {
     const next = sourceId === '' ? undefined : sourceId
     setSelectedSourceId(next)
+    setPinnedProjects([]) // clear stale project selections when scope changes
     loadProjects(next)
-    if (query.trim()) runSearch(query, next, pinnedProjects)
+    if (query.trim()) runSearch(query, next, [])
   }
 
   const handleProjectToggle = (project: string) => {
@@ -133,32 +134,34 @@ export default function ProjectsModule() {
           )}
         </div>
 
-        {/* Source scope + project selector row */}
-        {sources.length > 1 && (
+        {/* Source scope + project selector row — show when there's anything to filter */}
+        {(sources.length > 1 || availableProjects.length > 0) && (
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Source scope dropdown */}
-            <div className="relative">
-              <select
-                value={selectedSourceId ?? ''}
-                onChange={(e) => handleSourceChange(e.target.value)}
-                className="pl-2 pr-6 py-1 text-xs bg-surface-raised border border-border rounded
-                           text-text-secondary focus:outline-none focus:border-accent appearance-none"
-                aria-label="Source scope"
-              >
-                <option value="">All Sources</option>
-                {sources.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.displayName}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                size={10}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-text-secondary"
-              />
-            </div>
+            {/* Source scope dropdown — only shown when >1 source */}
+            {sources.length > 1 && (
+              <div className="relative">
+                <select
+                  value={selectedSourceId ?? ''}
+                  onChange={(e) => handleSourceChange(e.target.value)}
+                  className="pl-2 pr-6 py-1 text-xs bg-surface-raised border border-border rounded
+                             text-text-secondary focus:outline-none focus:border-accent appearance-none"
+                  aria-label="Source scope"
+                >
+                  <option value="">All Sources</option>
+                  {sources.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.displayName}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={10}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-text-secondary"
+                />
+              </div>
+            )}
 
-            {/* Project selector — multi-select listbox of distinct project names */}
+            {/* Project selector — multi-select listbox; shown whenever projects are available */}
             {availableProjects.length > 0 && (
               <div className="relative">
                 <select
