@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, screen, session, shell } from 'electron'
 import path from 'path'
 import { IPC_CHANNELS } from '../shared/ipc-types'
+import type { FileSource } from '../shared/file-sources'
 import { fileIndexService } from './fileIndexService'
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string
@@ -18,21 +19,22 @@ interface StoreSchema {
     height: number
     isMaximized: boolean
   }
-  connections: string  // JSON-encoded { fileServerRoot: string }
+  connections: string // JSON: FileSource[]
 }
 
 // Assigned in initStore() before createWindow()
 let store: import('electron-store').default<StoreSchema>
 
-// Reads the current file-server root from the store (live — always up to date)
-function getRoot(): string {
+function getSources(): FileSource[] {
   const raw = store?.get('connections') ?? ''
-  if (!raw) return ''
+  if (!raw) return []
   try {
-    const parsed = JSON.parse(raw as string) as { fileServerRoot?: string }
-    return parsed.fileServerRoot ?? ''
+    const parsed = JSON.parse(raw as string)
+    if (Array.isArray(parsed)) return parsed as FileSource[]
+    // Old format: { fileServerRoot } — migration runs in fileIndexService.init()
+    return []
   } catch {
-    return ''
+    return []
   }
 }
 
@@ -42,8 +44,7 @@ async function initStore(): Promise<void> {
 }
 
 function getDefaultWindowBounds() {
-  const { width: screenWidth, height: screenHeight } =
-    screen.getPrimaryDisplay().workAreaSize
+  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize
   return {
     width: 1280,
     height: 800,
@@ -188,13 +189,51 @@ ipcMain.handle(IPC_CHANNELS.FILE_INDEX_OPEN, (_event, filePath: string) => {
   return fileIndexService.openFile(filePath)
 })
 
-ipcMain.handle(IPC_CHANNELS.FILE_INDEX_REINDEX, () => {
-  fileIndexService.reindex()
-  // Also (re)start the watcher with the current root so live changes are picked up
-  // even if the root was empty at app startup
-  const root = getRoot()
-  if (root) fileIndexService.startWatcher(root)
-  // Resolves immediately — crawl runs in background; renderer tracks via FILE_INDEX_PROGRESS
+ipcMain.handle(IPC_CHANNELS.FILE_INDEX_REINDEX, (_event, sourceId?: string) => {
+  fileIndexService.reindex(sourceId)
+})
+
+ipcMain.handle(IPC_CHANNELS.FILE_INDEX_SOURCES_LIST, () => {
+  return getSources()
+})
+
+ipcMain.handle(IPC_CHANNELS.FILE_INDEX_PROJECTS_LIST, (_event, sourceId?: string) => {
+  return fileIndexService.listProjects(sourceId)
+})
+
+ipcMain.handle(IPC_CHANNELS.FILE_INDEX_SOURCE_SAVE, (_event, source: FileSource) => {
+  const current = getSources()
+  const existingIdx = current.findIndex((s) => s.id === source.id)
+  const wasEnabled = existingIdx >= 0 ? current[existingIdx].enabled : false
+  const isNew = existingIdx < 0
+  const updated =
+    existingIdx >= 0
+      ? current.map((s, i) => (i === existingIdx ? source : s))
+      : [...current, source]
+  store.set('connections', JSON.stringify(updated))
+
+  if (source.enabled && (isNew || !wasEnabled)) {
+    fileIndexService.stopWatcher(source.id)
+    fileIndexService.startWatcher(source)
+    fileIndexService
+      .crawlSource(source.id)
+      .catch((err) =>
+        console.error(`fileIndexService: crawl after save failed [${source.id}]:`, err),
+      )
+  } else if (!source.enabled) {
+    fileIndexService.stopWatcher(source.id)
+  }
+})
+
+ipcMain.handle(IPC_CHANNELS.FILE_INDEX_SOURCE_DELETE, (_event, sourceId: string): string | null => {
+  if (fileIndexService.isCrawling(sourceId)) {
+    return 'Source is currently indexing — please wait'
+  }
+  fileIndexService.stopWatcher(sourceId)
+  fileIndexService.deleteSourceData(sourceId)
+  const current = getSources().filter((s) => s.id !== sourceId)
+  store.set('connections', JSON.stringify(current))
+  return null
 })
 
 app.whenReady().then(async () => {
@@ -213,11 +252,7 @@ app.whenReady().then(async () => {
 
   createWindow()
 
-  fileIndexService.init(
-    path.join(app.getPath('userData'), 'file-index.db'),
-    getRoot,
-    mainWindow
-  )
+  fileIndexService.init(path.join(app.getPath('userData'), 'file-index.db'), getSources, mainWindow)
   fileIndexService.crawlIfStale()
 })
 
