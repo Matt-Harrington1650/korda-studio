@@ -1,15 +1,21 @@
 export interface Citation {
+  citationIndex: number
+  fileId: number
   filePath: string
-  chunkId?: string
-  chunkIndex?: number
+  fileName: string
+  chunkId: string
   excerpt: string
-  score?: number
   pageNumber?: number | null
-  startChar?: number | null
-  endChar?: number | null
+  sectionTitle: string | null
+  sourceId: string
 }
 
+export type EvidenceStatus = 'supported' | 'partial' | 'unsupported'
+
 export interface GroundedAnswer {
-  answer: string
+  text: string
   citations: Citation[]
+  evidenceStatus: EvidenceStatus
+  retrievedChunkCount: number
+  searchQueriesUsed: string[]
 }

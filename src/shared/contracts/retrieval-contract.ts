@@ -1,31 +1,26 @@
 import type { FileEntry } from '../ipc-types'
+import type { ChunkRecord } from './chunk-record'
 
 export interface RetrievalParams {
   query: string
-  limit?: number
   sourceId?: string
-  project?: string | string[]
-  discipline?: string
-  docType?: string
-  ext?: string
+  project?: string
+  limit?: number
+  mode?: RetrievalMode
 }
 
-export interface RetrievalHit {
-  file: FileEntry
-  score: number
-  chunkId?: string
-  chunkIndex?: number
-  text?: string
-  pageNumber?: number | null
-  startChar?: number | null
-  endChar?: number | null
-}
+export type RetrievalMode = 'keyword' | 'vector' | 'hybrid'
 
 export interface RetrievalResult {
-  query: string
-  hits: RetrievalHit[]
+  chunk: ChunkRecord
+  file: FileEntry
+  bm25Score: number | null
+  vectorDistance: number | null
+  rrfScore: number | null
+  highlight: string
 }
 
 export interface RetrievalProvider {
-  retrieve(params: RetrievalParams): Promise<RetrievalResult>
+  search(params: RetrievalParams): Promise<RetrievalResult[]>
+  isVectorReady(): boolean
 }

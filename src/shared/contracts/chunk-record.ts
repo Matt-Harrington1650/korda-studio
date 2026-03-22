@@ -1,13 +1,14 @@
 export interface ChunkRecord {
-  id: string
-  indexRecordId: string
+  id: string // UUID
+  fileId: number
+  sourceId: string
   chunkIndex: number
   text: string
-  startChar: number | null
-  endChar: number | null
-  tokenCount: number | null
+  tokenCount: number
+  charCount: number
   pageNumber: number | null
   sectionTitle: string | null
+  sheetName: string | null
+  embedding: Buffer | null
   createdAt: number
-  updatedAt: number
 }

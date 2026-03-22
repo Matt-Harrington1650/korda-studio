@@ -1,21 +1,21 @@
-export interface PipelineState {
-  status: 'idle' | 'queued' | 'running' | 'complete' | 'failed'
-  stage: string
-  startedAt: number | null
-  finishedAt: number | null
-  error: string | null
-}
+export type PipelineState =
+  | 'new'
+  | 'queued'
+  | 'extracting'
+  | 'chunking'
+  | 'contextualizing'
+  | 'indexed'
+  | 'failed'
+  | 'skipped'
 
 export interface IndexRecord {
-  id: string
-  sourceId: string
+  fileId: number
   path: string
   name: string
-  ext: string
-  sizeBytes: number
-  modifiedMs: number
-  indexedAt: number
-  contentHash: string
-  chunkCount: number
+  sourceId: string
+  contentHash: string | null
   pipelineState: PipelineState
+  pipelineError: string | null
+  pipelineUpdatedAt: number | null
+  pageCount: number | null
 }
