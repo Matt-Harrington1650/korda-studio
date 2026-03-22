@@ -33,6 +33,13 @@ let stmtSearch: Database.Statement
 let stmtUpsertProject: Database.Statement
 let stmtUpdateProjectCounts: Database.Statement
 
+const FILE_CHANGED_SQL = `
+  files.size_bytes != excluded.size_bytes OR
+  files.modified_ms != excluded.modified_ms OR
+  files.is_dir != excluded.is_dir OR
+  files.source_id != excluded.source_id
+`
+
 // ── Schema ───────────────────────────────────────────────────────────────────
 
 const SCHEMA_SQL = `
@@ -151,6 +158,68 @@ function runMigrations(): void {
       db.prepare('DELETE FROM index_meta WHERE key = ?').run(key)
     }
   }
+
+  for (const column of [
+    `ALTER TABLE files ADD COLUMN pipeline_state TEXT NOT NULL DEFAULT 'new'`,
+    `ALTER TABLE files ADD COLUMN pipeline_error TEXT`,
+    `ALTER TABLE files ADD COLUMN pipeline_updated_at INTEGER`,
+    `ALTER TABLE files ADD COLUMN page_count INTEGER`,
+  ]) {
+    try {
+      db.exec(column)
+    } catch {
+      // Column already exists.
+    }
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chunks (
+      id            TEXT PRIMARY KEY,
+      file_id       INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+      source_id     TEXT NOT NULL,
+      chunk_index   INTEGER NOT NULL,
+      text          TEXT NOT NULL,
+      token_count   INTEGER NOT NULL,
+      char_count    INTEGER NOT NULL,
+      page_number   INTEGER,
+      section_title TEXT,
+      sheet_name    TEXT,
+      embedding     BLOB,
+      created_at    INTEGER NOT NULL,
+      UNIQUE(file_id, chunk_index)
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_file_id ON chunks(file_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_source_id ON chunks(source_id)`)
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+      text,
+      section_title,
+      content='chunks',
+      content_rowid='rowid',
+      tokenize='porter unicode61'
+    )
+  `)
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+      INSERT INTO chunks_fts(rowid, text, section_title)
+      VALUES (new.rowid, new.text, new.section_title);
+    END
+  `)
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+      INSERT INTO chunks_fts(chunks_fts, rowid, text, section_title)
+      VALUES ('delete', old.rowid, old.text, old.section_title);
+    END
+  `)
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+      INSERT INTO chunks_fts(chunks_fts, rowid, text, section_title)
+      VALUES ('delete', old.rowid, old.text, old.section_title);
+      INSERT INTO chunks_fts(rowid, text, section_title)
+      VALUES (new.rowid, new.text, new.section_title);
+    END
+  `)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -176,6 +245,7 @@ function getPathSegments(
 // reindexSource is async so reindexAll can await each in sequence (avoids disk thrashing)
 async function reindexSource(sourceId: string): Promise<void> {
   if (!db) return
+  db.prepare('DELETE FROM chunks WHERE source_id = ?').run(sourceId)
   db.prepare('DELETE FROM files WHERE source_id = ?').run(sourceId)
   db.prepare('DELETE FROM projects WHERE source_id = ?').run(sourceId)
   await fileIndexService.crawlSource(sourceId)
@@ -202,10 +272,55 @@ export const fileIndexService = {
     db.exec(SCHEMA_SQL)
     runMigrations()
     stmtUpsertFile = db.prepare(
-      `INSERT OR REPLACE INTO files (path, name, ext, size_bytes, modified_ms, is_dir, indexed_at, source_id, project, discipline, doc_type, drawing_number, revision, issue_status, file_date_ms) VALUES (@path, @name, @ext, @sizeBytes, @modifiedMs, @isDir, @indexedAt, @sourceId, @project, @discipline, @docType, @drawingNumber, @revision, @issueStatus, @fileDateMs)`,
+      `INSERT INTO files (
+        path, name, ext, size_bytes, modified_ms, is_dir, indexed_at, source_id,
+        project, discipline, doc_type, drawing_number, revision, issue_status, file_date_ms,
+        pipeline_state, pipeline_error, pipeline_updated_at, page_count
+      ) VALUES (
+        @path, @name, @ext, @sizeBytes, @modifiedMs, @isDir, @indexedAt, @sourceId,
+        @project, @discipline, @docType, @drawingNumber, @revision, @issueStatus, @fileDateMs,
+        @pipelineState, @pipelineError, @pipelineUpdatedAt, @pageCount
+      )
+      ON CONFLICT(path) DO UPDATE SET
+        name = excluded.name,
+        ext = excluded.ext,
+        size_bytes = excluded.size_bytes,
+        modified_ms = excluded.modified_ms,
+        is_dir = excluded.is_dir,
+        indexed_at = excluded.indexed_at,
+        source_id = excluded.source_id,
+        project = excluded.project,
+        discipline = excluded.discipline,
+        doc_type = excluded.doc_type,
+        drawing_number = excluded.drawing_number,
+        revision = excluded.revision,
+        issue_status = excluded.issue_status,
+        file_date_ms = excluded.file_date_ms,
+        pipeline_state = CASE WHEN ${FILE_CHANGED_SQL} THEN excluded.pipeline_state ELSE files.pipeline_state END,
+        pipeline_error = CASE WHEN ${FILE_CHANGED_SQL} THEN excluded.pipeline_error ELSE files.pipeline_error END,
+        pipeline_updated_at = CASE WHEN ${FILE_CHANGED_SQL} THEN excluded.pipeline_updated_at ELSE files.pipeline_updated_at END,
+        page_count = CASE WHEN ${FILE_CHANGED_SQL} THEN excluded.page_count ELSE files.page_count END,
+        content_hash = CASE WHEN ${FILE_CHANGED_SQL} THEN NULL ELSE files.content_hash END,
+        ai_summary = CASE WHEN ${FILE_CHANGED_SQL} THEN NULL ELSE files.ai_summary END,
+        ai_tags = CASE WHEN ${FILE_CHANGED_SQL} THEN NULL ELSE files.ai_tags END,
+        embedding_ref = CASE WHEN ${FILE_CHANGED_SQL} THEN NULL ELSE files.embedding_ref END,
+        ai_processed_at = CASE WHEN ${FILE_CHANGED_SQL} THEN NULL ELSE files.ai_processed_at END`,
     )
     stmtUpdateFile = db.prepare(
-      `UPDATE files SET size_bytes = @sizeBytes, modified_ms = @modifiedMs, indexed_at = @indexedAt WHERE path = @path`,
+      `UPDATE files
+       SET size_bytes = @sizeBytes,
+           modified_ms = @modifiedMs,
+           indexed_at = @indexedAt,
+           pipeline_state = 'new',
+           pipeline_error = NULL,
+           pipeline_updated_at = @pipelineUpdatedAt,
+           page_count = NULL,
+           content_hash = NULL,
+           ai_summary = NULL,
+           ai_tags = NULL,
+           embedding_ref = NULL,
+           ai_processed_at = NULL
+       WHERE path = @path`,
     )
     stmtDeleteFile = db.prepare(`DELETE FROM files WHERE path = ?`)
     stmtDeleteChildren = db.prepare(`DELETE FROM files WHERE path LIKE ?`)
@@ -419,6 +534,10 @@ export const fileIndexService = {
               revision: null,
               issueStatus: null,
               fileDateMs: null,
+              pipelineState: 'new',
+              pipelineError: null,
+              pipelineUpdatedAt: crawlStartMs,
+              pageCount: null,
             })
             await walk(fullPath)
           } else {
@@ -447,6 +566,10 @@ export const fileIndexService = {
               revision: parsed.revision,
               issueStatus: parsed.issueStatus,
               fileDateMs: parsed.fileDateMs,
+              pipelineState: 'new',
+              pipelineError: null,
+              pipelineUpdatedAt: crawlStartMs,
+              pageCount: null,
             })
           }
           if (batch.length >= BATCH_SIZE) flushBatch()
@@ -550,6 +673,10 @@ export const fileIndexService = {
               revision: parsed.revision,
               issueStatus: parsed.issueStatus,
               fileDateMs: parsed.fileDateMs,
+              pipelineState: 'new',
+              pipelineError: null,
+              pipelineUpdatedAt: Date.now(),
+              pageCount: null,
             })
           })
           .catch(() => {})
@@ -563,6 +690,7 @@ export const fileIndexService = {
               sizeBytes: stat.size,
               modifiedMs: Math.round(stat.mtimeMs),
               indexedAt: Date.now(),
+              pipelineUpdatedAt: Date.now(),
             })
           })
           .catch(() => {})
@@ -589,6 +717,10 @@ export const fileIndexService = {
           revision: null,
           issueStatus: null,
           fileDateMs: null,
+          pipelineState: 'new',
+          pipelineError: null,
+          pipelineUpdatedAt: Date.now(),
+          pageCount: null,
         })
       })
       .on('unlinkDir', (dirPath) => {
@@ -617,6 +749,7 @@ export const fileIndexService = {
 
   deleteSourceData(sourceId: string): void {
     if (!db) return
+    db.prepare('DELETE FROM chunks WHERE source_id = ?').run(sourceId)
     db.prepare('DELETE FROM files WHERE source_id = ?').run(sourceId)
     db.prepare('DELETE FROM projects WHERE source_id = ?').run(sourceId)
     // Use explicit key list to avoid LIKE wildcard ambiguity
