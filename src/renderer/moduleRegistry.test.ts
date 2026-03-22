@@ -11,9 +11,11 @@ describe('moduleRegistry', () => {
     expect(new Set(paths).size).toBe(paths.length)
   })
 
-  it('contains all four seed modules', () => {
+  it('contains the primary app modules', () => {
     const ids = modules.map((m) => m.id)
     expect(ids).toContain('home')
+    expect(ids).toContain('projects')
+    expect(ids).toContain('chat')
     expect(ids).toContain('bookmarks')
     expect(ids).toContain('system-status')
     expect(ids).toContain('settings')

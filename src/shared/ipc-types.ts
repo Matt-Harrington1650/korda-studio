@@ -38,6 +38,31 @@ export interface SearchParams {
   limit?: number
 }
 
+export interface Conversation {
+  id: string
+  title: string
+  model: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ChatMessage {
+  id: string
+  conversationId: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: number
+  model?: string
+  inputTokens?: number
+  outputTokens?: number
+}
+
+export interface SendParams {
+  conversationId: string
+  content: string
+  model: string
+}
+
 export interface KordaAPI {
   getAppVersion: () => Promise<string>
   getWindowState: () => Promise<WindowState | null>
@@ -47,13 +72,30 @@ export interface KordaAPI {
   closeWindow: () => void
   openExternal: (url: string) => Promise<void>
   onNotification: (callback: (payload: { title: string; body: string }) => void) => () => void
-  storeGet: (key: string) => Promise<string | null>
-  storeSet: (key: string, value: string | null) => Promise<void>
+  storeGet: <T = string>(key: string) => Promise<T | null>
+  storeSet: (key: string, value: unknown | null) => Promise<void>
   fileIndexSearch: (params: SearchParams) => Promise<FileEntry[]>
   fileIndexStatus: () => Promise<IndexStatus>
   fileIndexOpen: (path: string) => Promise<string>
   fileIndexReindex: () => Promise<void>
   onFileIndexProgress: (cb: (count: number) => void) => () => void
+  chatSend: (params: SendParams) => Promise<{ messageId: string }>
+  chatStop: () => Promise<void>
+  chatConversationsList: () => Promise<Conversation[]>
+  chatConversationGet: (
+    id: string,
+  ) => Promise<{ conversation: Conversation; messages: ChatMessage[] }>
+  chatConversationNew: () => Promise<Conversation>
+  chatConversationDelete: (id: string) => Promise<void>
+  chatConversationRename: (id: string, title: string) => Promise<void>
+  chatMessagesDeleteFrom: (conversationId: string, fromMessageId: string) => Promise<void>
+  chatTestConnection: () => Promise<{ ok: boolean; error?: string }>
+  chatApiKeySource: () => Promise<'env' | 'store' | 'none'>
+  onChatToken: (cb: (token: string) => void) => () => void
+  onChatDone: (
+    cb: (data: { messageId: string; inputTokens: number; outputTokens: number }) => void,
+  ) => () => void
+  onChatError: (cb: (message: string) => void) => () => void
 }
 
 // Channel names as constants to prevent typos
@@ -73,4 +115,17 @@ export const IPC_CHANNELS = {
   FILE_INDEX_OPEN: 'file-index:open',
   FILE_INDEX_REINDEX: 'file-index:reindex',
   FILE_INDEX_PROGRESS: 'file-index:progress',
+  CHAT_SEND: 'chat:send',
+  CHAT_STOP: 'chat:stop',
+  CHAT_CONVERSATIONS_LIST: 'chat:conversations:list',
+  CHAT_CONVERSATION_GET: 'chat:conversation:get',
+  CHAT_CONVERSATION_NEW: 'chat:conversation:new',
+  CHAT_CONVERSATION_DELETE: 'chat:conversation:delete',
+  CHAT_CONVERSATION_RENAME: 'chat:conversation:rename',
+  CHAT_MESSAGES_DELETE_FROM: 'chat:messages:delete-from',
+  CHAT_TEST_CONNECTION: 'chat:test-connection',
+  CHAT_API_KEY_SOURCE: 'chat:api-key-source',
+  CHAT_TOKEN: 'chat:token',
+  CHAT_DONE: 'chat:done',
+  CHAT_ERROR: 'chat:error',
 } as const

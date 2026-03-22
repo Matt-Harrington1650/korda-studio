@@ -12,6 +12,7 @@ describe('SettingsModule', () => {
     expect(screen.getByText('Appearance')).toBeInTheDocument()
     expect(screen.getByText('Profile')).toBeInTheDocument()
     expect(screen.getByText('Connections')).toBeInTheDocument()
+    expect(screen.getByText('AI')).toBeInTheDocument()
     expect(screen.getByText('About')).toBeInTheDocument()
   })
 })

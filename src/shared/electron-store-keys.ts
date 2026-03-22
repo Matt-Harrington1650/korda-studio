@@ -5,6 +5,7 @@ export const STORE_KEYS = {
   NOTIFICATIONS: 'notifications',
   WINDOW_STATE: 'window-state',
   CONNECTIONS: 'connections',
+  AI: 'ai',
 } as const
 
 export type StoreKey = (typeof STORE_KEYS)[keyof typeof STORE_KEYS]

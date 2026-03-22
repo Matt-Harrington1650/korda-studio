@@ -30,6 +30,7 @@ export function IndexStatusBar({ onReindex }: Props) {
     // Subscribe to progress events during crawl
     const unsubscribe = window.kordaAPI.onFileIndexProgress((count) => {
       setLiveCount(count)
+      refresh() // ensure status flips to 'crawling' immediately
     })
 
     return () => {
@@ -40,7 +41,9 @@ export function IndexStatusBar({ onReindex }: Props) {
 
   if (!status || status.status === 'not-configured') return null
 
-  const isCrawling = status.status === 'crawling'
+  // liveCount being non-null means a progress event arrived — treat as crawling
+  // even if the status poll hasn't caught up yet (fast crawls complete before the IPC round-trip)
+  const isCrawling = status.status === 'crawling' || liveCount !== null
   const isError = status.status === 'error'
   const count = liveCount ?? status.fileCount
 

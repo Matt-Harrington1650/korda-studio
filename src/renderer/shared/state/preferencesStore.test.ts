@@ -9,6 +9,8 @@ describe('preferencesStore', () => {
     })
     usePreferencesStore.setState({
       displayName: '',
+      firmName: '',
+      disciplines: '',
       sidebarCollapsed: false,
       bookmarks: [],
     })
@@ -17,6 +19,8 @@ describe('preferencesStore', () => {
   it('has correct initial state', () => {
     const state = usePreferencesStore.getState()
     expect(state.displayName).toBe('')
+    expect(state.firmName).toBe('')
+    expect(state.disciplines).toBe('')
     expect(state.sidebarCollapsed).toBe(false)
     expect(state.bookmarks).toEqual([])
   })
@@ -24,6 +28,16 @@ describe('preferencesStore', () => {
   it('sets display name', () => {
     usePreferencesStore.getState().setDisplayName('Alice')
     expect(usePreferencesStore.getState().displayName).toBe('Alice')
+  })
+
+  it('sets firm name', () => {
+    usePreferencesStore.getState().setFirmName('KORDA')
+    expect(usePreferencesStore.getState().firmName).toBe('KORDA')
+  })
+
+  it('sets disciplines', () => {
+    usePreferencesStore.getState().setDisciplines('Civil, Structural')
+    expect(usePreferencesStore.getState().disciplines).toBe('Civil, Structural')
   })
 
   it('toggles sidebar', () => {

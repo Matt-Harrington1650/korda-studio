@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../shared/ipc-types'
-import type { WindowState } from '../shared/ipc-types'
+import type { SendParams, WindowState } from '../shared/ipc-types'
 
 contextBridge.exposeInMainWorld('kordaAPI', {
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION),
@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('kordaAPI', {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.NOTIFICATION_PUSH, handler)
   },
   storeGet: (key: string) => ipcRenderer.invoke(IPC_CHANNELS.STORE_GET, key),
-  storeSet: (key: string, value: string | null) =>
+  storeSet: (key: string, value: unknown | null) =>
     ipcRenderer.invoke(IPC_CHANNELS.STORE_SET, key, value),
   fileIndexSearch: (params: import('../shared/ipc-types').SearchParams) =>
     ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_SEARCH, params),
@@ -30,5 +30,38 @@ contextBridge.exposeInMainWorld('kordaAPI', {
     const handler = (_: Electron.IpcRendererEvent, count: number) => cb(count)
     ipcRenderer.on(IPC_CHANNELS.FILE_INDEX_PROGRESS, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.FILE_INDEX_PROGRESS, handler)
+  },
+  chatSend: (params: SendParams) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND, params),
+  chatStop: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_STOP),
+  chatConversationsList: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_CONVERSATIONS_LIST),
+  chatConversationGet: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_CONVERSATION_GET, id),
+  chatConversationNew: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_CONVERSATION_NEW),
+  chatConversationDelete: (id: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CHAT_CONVERSATION_DELETE, id),
+  chatConversationRename: (id: string, title: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CHAT_CONVERSATION_RENAME, id, title),
+  chatMessagesDeleteFrom: (conversationId: string, fromMessageId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CHAT_MESSAGES_DELETE_FROM, conversationId, fromMessageId),
+  chatTestConnection: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_TEST_CONNECTION),
+  chatApiKeySource: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_API_KEY_SOURCE),
+  onChatToken: (cb: (token: string) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, token: string) => cb(token)
+    ipcRenderer.on(IPC_CHANNELS.CHAT_TOKEN, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_TOKEN, handler)
+  },
+  onChatDone: (
+    cb: (data: { messageId: string; inputTokens: number; outputTokens: number }) => void,
+  ) => {
+    const handler = (
+      _: Electron.IpcRendererEvent,
+      data: { messageId: string; inputTokens: number; outputTokens: number },
+    ) => cb(data)
+    ipcRenderer.on(IPC_CHANNELS.CHAT_DONE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_DONE, handler)
+  },
+  onChatError: (cb: (message: string) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, message: string) => cb(message)
+    ipcRenderer.on(IPC_CHANNELS.CHAT_ERROR, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_ERROR, handler)
   },
 })

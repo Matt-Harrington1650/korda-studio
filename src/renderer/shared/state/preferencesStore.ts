@@ -12,9 +12,13 @@ export interface Bookmark {
 
 interface PreferencesState {
   displayName: string
+  firmName: string
+  disciplines: string
   sidebarCollapsed: boolean
   bookmarks: Bookmark[]
   setDisplayName: (name: string) => void
+  setFirmName: (name: string) => void
+  setDisciplines: (disciplines: string) => void
   toggleSidebar: () => void
   addBookmark: (bookmark: Bookmark) => void
   updateBookmark: (id: string, updates: Partial<Omit<Bookmark, 'id'>>) => void
@@ -26,9 +30,13 @@ export const usePreferencesStore = create<PreferencesState>()(
     persist(
       (set) => ({
         displayName: '',
+        firmName: '',
+        disciplines: '',
         sidebarCollapsed: false,
         bookmarks: [],
         setDisplayName: (name) => set({ displayName: name }),
+        setFirmName: (firmName) => set({ firmName }),
+        setDisciplines: (disciplines) => set({ disciplines }),
         toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
         addBookmark: (bookmark) => set((state) => ({ bookmarks: [...state.bookmarks, bookmark] })),
         updateBookmark: (id, updates) =>

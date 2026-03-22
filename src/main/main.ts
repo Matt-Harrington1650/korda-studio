@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, screen, session, shell } from 'electron'
 import path from 'path'
-import { IPC_CHANNELS } from '../shared/ipc-types'
+import { IPC_CHANNELS, type SendParams } from '../shared/ipc-types'
+import { DEFAULT_AI_CONFIG, DEFAULT_FIRM_CONTEXT, type AIConfig } from '../shared/ai-config'
+import { chatService } from './chatService'
 import { fileIndexService } from './fileIndexService'
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string
@@ -19,6 +21,7 @@ interface StoreSchema {
     isMaximized: boolean
   }
   connections: string  // JSON-encoded { fileServerRoot: string }
+  ai: AIConfig
 }
 
 // Assigned in initStore() before createWindow()
@@ -38,7 +41,39 @@ function getRoot(): string {
 
 async function initStore(): Promise<void> {
   const { default: Store } = await import('electron-store')
-  store = new Store<StoreSchema>()
+  store = new Store<StoreSchema>({
+    defaults: {
+      preferences: '',
+      notifications: '',
+      'window-state': getDefaultWindowBounds(),
+      connections: '',
+      ai: { ...DEFAULT_AI_CONFIG },
+    },
+  })
+}
+
+function getPreferences(): { firmName: string; disciplines: string } {
+  const raw = store?.get('preferences') ?? '{}'
+  try {
+    const parsed = JSON.parse(raw as string) as { firmName?: string; disciplines?: string }
+    return {
+      firmName: parsed.firmName ?? '',
+      disciplines: parsed.disciplines ?? '',
+    }
+  } catch {
+    return { firmName: '', disciplines: '' }
+  }
+}
+
+function getAIConfig(): AIConfig {
+  return {
+    ...DEFAULT_AI_CONFIG,
+    ...(store?.get('ai') ?? {}),
+  }
+}
+
+function getApiKey(): string {
+  return process.env.ANTHROPIC_API_KEY ?? getAIConfig().anthropicApiKey ?? ''
 }
 
 function getDefaultWindowBounds() {
@@ -167,7 +202,7 @@ ipcMain.handle(IPC_CHANNELS.STORE_GET, (_event, key: string) => {
   return store?.get(key as keyof StoreSchema) ?? null
 })
 
-ipcMain.handle(IPC_CHANNELS.STORE_SET, (_event, key: string, value: string | null) => {
+ipcMain.handle(IPC_CHANNELS.STORE_SET, (_event, key: string, value: unknown | null) => {
   if (!store) return
   if (value === null) {
     store.delete(key as keyof StoreSchema)
@@ -197,6 +232,51 @@ ipcMain.handle(IPC_CHANNELS.FILE_INDEX_REINDEX, () => {
   // Resolves immediately — crawl runs in background; renderer tracks via FILE_INDEX_PROGRESS
 })
 
+ipcMain.handle(IPC_CHANNELS.CHAT_SEND, (_event, params: SendParams) => {
+  return chatService.send(params.conversationId, params.content, params.model)
+})
+
+ipcMain.handle(IPC_CHANNELS.CHAT_STOP, () => {
+  chatService.stop()
+})
+
+ipcMain.handle(IPC_CHANNELS.CHAT_CONVERSATIONS_LIST, () => {
+  return chatService.listConversations()
+})
+
+ipcMain.handle(IPC_CHANNELS.CHAT_CONVERSATION_GET, (_event, id: string) => {
+  return chatService.getConversation(id)
+})
+
+ipcMain.handle(IPC_CHANNELS.CHAT_CONVERSATION_NEW, () => {
+  return chatService.newConversation()
+})
+
+ipcMain.handle(IPC_CHANNELS.CHAT_CONVERSATION_DELETE, (_event, id: string) => {
+  chatService.deleteConversation(id)
+})
+
+ipcMain.handle(IPC_CHANNELS.CHAT_CONVERSATION_RENAME, (_event, id: string, title: string) => {
+  chatService.renameConversation(id, title)
+})
+
+ipcMain.handle(
+  IPC_CHANNELS.CHAT_MESSAGES_DELETE_FROM,
+  (_event, conversationId: string, fromMessageId: string) => {
+    chatService.deleteMessagesFrom(conversationId, fromMessageId)
+  },
+)
+
+ipcMain.handle(IPC_CHANNELS.CHAT_TEST_CONNECTION, () => {
+  return chatService.testConnection()
+})
+
+ipcMain.handle(IPC_CHANNELS.CHAT_API_KEY_SOURCE, (): 'env' | 'store' | 'none' => {
+  if (process.env.ANTHROPIC_API_KEY) return 'env'
+  if (getAIConfig().anthropicApiKey) return 'store'
+  return 'none'
+})
+
 app.whenReady().then(async () => {
   await initStore()
 
@@ -213,12 +293,20 @@ app.whenReady().then(async () => {
 
   createWindow()
 
-  fileIndexService.init(
-    path.join(app.getPath('userData'), 'file-index.db'),
-    getRoot,
-    mainWindow
-  )
-  fileIndexService.crawlIfStale()
+  const dbPath = path.join(app.getPath('userData'), 'file-index.db')
+  const chatDbPath = path.join(app.getPath('userData'), 'chat.db')
+  try {
+    fileIndexService.init(dbPath, getRoot, mainWindow)
+    fileIndexService.crawlIfStale()
+  } catch (err) {
+    console.error('[KORDA] fileIndexService.init FAILED:', err)
+  }
+
+  try {
+    chatService.init(chatDbPath, getApiKey, getPreferences, getAIConfig, mainWindow)
+  } catch (err) {
+    console.error('[KORDA] chatService.init FAILED:', err)
+  }
 })
 
 app.on('window-all-closed', () => {

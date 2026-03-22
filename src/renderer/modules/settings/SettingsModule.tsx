@@ -1,10 +1,11 @@
 import { NavLink, Outlet } from 'react-router'
-import { Palette, User, Link2, Info } from 'lucide-react'
+import { Palette, User, Link2, Bot, Info } from 'lucide-react'
 
 const settingsNav = [
   { path: '/settings', label: 'Appearance', icon: Palette, end: true },
   { path: '/settings/profile', label: 'Profile', icon: User },
   { path: '/settings/connections', label: 'Connections', icon: Link2 },
+  { path: '/settings/ai', label: 'AI', icon: Bot },
   { path: '/settings/about', label: 'About', icon: Info },
 ]
 

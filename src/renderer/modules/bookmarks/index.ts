@@ -9,5 +9,5 @@ export const definition: ModuleDefinition = {
   icon: Star,
   path: '/bookmarks',
   group: 'work',
-  order: 2,
+  order: 3,
 }

@@ -26,6 +26,10 @@ export function useCommandPaletteShortcut() {
         e.preventDefault()
         navigate('/projects')
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
+        e.preventDefault()
+        navigate('/chat')
+      }
     },
     [toggleCommandPalette, navigate],
   )

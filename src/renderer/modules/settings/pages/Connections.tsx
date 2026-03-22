@@ -49,6 +49,7 @@ export function Component() {
         STORE_KEYS.CONNECTIONS,
         JSON.stringify({ fileServerRoot: rootPath }),
       )
+      setStatus((s) => s ? { ...s, status: 'crawling' } : s)
       await window.kordaAPI.fileIndexReindex()
       await loadStatus()
       setSavedOk(true)
@@ -62,6 +63,7 @@ export function Component() {
   }
 
   const handleReindex = async () => {
+    setStatus((s) => s ? { ...s, status: 'crawling' } : s)
     await window.kordaAPI.fileIndexReindex()
     await loadStatus()
   }

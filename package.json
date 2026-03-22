@@ -6,8 +6,8 @@
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
+    "prestart": "electron-rebuild -v 41.0.2 --force --only better-sqlite3",
     "start": "electron-forge start",
-    "poststart": "npm rebuild better-sqlite3",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
@@ -57,6 +57,7 @@
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "electron": "41.0.2",
     "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
@@ -70,6 +71,7 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@tailwindcss/vite": "^4.2.1",
     "better-sqlite3": "^12.8.0",
     "chokidar": "^3.6.0",
@@ -78,7 +80,9 @@
     "lucide-react": "^0.577.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
     "react-router": "^7.13.1",
+    "react-syntax-highlighter": "^16.1.1",
     "tailwindcss": "^4.2.1",
     "zustand": "^5.0.11"
   }

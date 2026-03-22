@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { ModuleErrorBoundary } from './ErrorBoundary'
 
-function ThrowingChild() {
+function ThrowingChild(): never {
   throw new Error('test error')
 }
 
