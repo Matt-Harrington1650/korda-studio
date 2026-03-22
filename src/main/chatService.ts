@@ -4,7 +4,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { BrowserWindow } from 'electron'
 import type { ChatMessage, Conversation } from '../shared/ipc-types'
 import { IPC_CHANNELS } from '../shared/ipc-types'
-import { AnthropicClient, type LLMClient, type LLMStreamResult } from './llmClient'
+import type { LLMProvider, LLMStreamResult } from '../shared/contracts/llm-provider'
+import { AnthropicClient } from './llmClient'
 
 interface PreferencesSnapshot {
   firmName: string
@@ -45,7 +46,7 @@ let getAIConfigRef: () => AIConfigSnapshot = () => ({
   defaultModel: 'claude-sonnet-4-6',
   firmContext: '',
 })
-let llmClient: LLMClient | null = null
+let llmClient: LLMProvider | null = null
 let activeStream: LLMStreamResult | null = null
 
 let stmtInsertConversation: Database.Statement
@@ -364,10 +365,12 @@ export const chatService = {
       })
     }
 
-    const messages = (stmtGetConversationMessages.all(conversationId) as MessageRow[]).map((row) => ({
-      role: row.role,
-      content: row.content,
-    }))
+    const messages = (stmtGetConversationMessages.all(conversationId) as MessageRow[]).map(
+      (row) => ({
+        role: row.role,
+        content: row.content,
+      }),
+    )
     const stream = llmClient.stream(messages, model, this.buildSystemPrompt())
     activeStream = stream
     void runStream(conversationId, assistantMessageId, model, stream)
@@ -410,8 +413,6 @@ ${getAIConfigRef().firmContext}
 // TODO(phase-2E): append live file index context here
 // const indexSummary = await fileIndexService.getProjectSummary()`
 
-    return systemPrompt
-      .replaceAll('{firmName}', firmName)
-      .replaceAll('{disciplines}', disciplines)
+    return systemPrompt.replaceAll('{firmName}', firmName).replaceAll('{disciplines}', disciplines)
   },
 }

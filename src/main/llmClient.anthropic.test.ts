@@ -110,4 +110,21 @@ describe('AnthropicClient', () => {
       outputTokens: 456,
     })
   })
+
+  it('throws a Phase 3A placeholder for streamWithTools', () => {
+    const client = new AnthropicClient(() => 'test-key')
+
+    expect(() =>
+      (
+        client as unknown as {
+          streamWithTools: (
+            messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+            tools: unknown[],
+            model: string,
+            systemPrompt: string,
+          ) => unknown
+        }
+      ).streamWithTools([], [], 'claude-sonnet-4-6', 'System'),
+    ).toThrow('streamWithTools not implemented until Phase 3B')
+  })
 })

@@ -1,26 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
+import type { AgentTool } from '../shared/contracts/agent-tool-contract'
+import type { LLMMessage, LLMProvider, LLMStreamResult } from '../shared/contracts/llm-provider'
 
-export interface LLMMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
-
-export interface LLMFinalMessage {
-  inputTokens: number
-  outputTokens: number
-}
-
-export interface LLMStreamResult {
-  iterable: AsyncIterable<string>
-  abort: () => void
-  finalMessage: () => Promise<LLMFinalMessage>
-}
-
-export interface LLMClient {
-  stream(messages: LLMMessage[], model: string, systemPrompt: string): LLMStreamResult
-}
-
-export class AnthropicClient implements LLMClient {
+export class AnthropicClient implements LLMProvider {
   constructor(private readonly getApiKey: () => string) {}
 
   stream(messages: LLMMessage[], model: string, systemPrompt: string): LLMStreamResult {
@@ -59,5 +41,14 @@ export class AnthropicClient implements LLMClient {
         }
       },
     }
+  }
+
+  streamWithTools(
+    _messages: LLMMessage[],
+    _tools: AgentTool[],
+    _model: string,
+    _systemPrompt: string,
+  ): ReturnType<LLMProvider['streamWithTools']> {
+    throw new Error('streamWithTools not implemented until Phase 3B')
   }
 }
