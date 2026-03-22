@@ -55,6 +55,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
@@ -76,9 +77,12 @@
     "@tailwindcss/vite": "^4.2.1",
     "better-sqlite3": "^12.8.0",
     "chokidar": "^3.6.0",
+    "cohere-ai": "^7.20.0",
     "electron-squirrel-startup": "^1.0.1",
     "electron-store": "^11.0.2",
     "lucide-react": "^0.577.0",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
@@ -86,6 +90,7 @@
     "react-syntax-highlighter": "^16.1.1",
     "tailwindcss": "^4.2.1",
     "uuid": "^13.0.0",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.11"
   }
 }
