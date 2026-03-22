@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../shared/ipc-types'
-import type { SendParams, WindowState } from '../shared/ipc-types'
+import type {
+  IngestionProgressEvent,
+  RetrievalParams,
+  SendParams,
+  WindowState,
+} from '../shared/ipc-types'
 
 contextBridge.exposeInMainWorld('kordaAPI', {
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION),
@@ -71,4 +76,16 @@ contextBridge.exposeInMainWorld('kordaAPI', {
     ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_SOURCE_DELETE, sourceId),
   fileIndexProjectsList: (sourceId?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_PROJECTS_LIST, sourceId),
+  knowledgeSearch: (params: RetrievalParams) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SEARCH, params),
+  knowledgeAdjacent: (fileId: number, chunkIndex: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_ADJACENT, fileId, chunkIndex),
+  ingestionStatus: (sourceId?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.INGESTION_STATUS, sourceId),
+  ingestionRetry: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.INGESTION_RETRY, sourceId),
+  onIngestionProgress: (cb: (event: IngestionProgressEvent) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, event: IngestionProgressEvent) => cb(event)
+    ipcRenderer.on(IPC_CHANNELS.INGESTION_PROGRESS, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.INGESTION_PROGRESS, handler)
+  },
 })
