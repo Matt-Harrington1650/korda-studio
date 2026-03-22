@@ -2,9 +2,12 @@ import { app, BrowserWindow, ipcMain, screen, session, shell } from 'electron'
 import path from 'path'
 import { IPC_CHANNELS, type SendParams } from '../shared/ipc-types'
 import { DEFAULT_AI_CONFIG, type AIConfig } from '../shared/ai-config'
+import type { RetrievalParams } from '../shared/contracts/retrieval-contract'
 import { chatService } from './chatService'
 import type { FileSource } from '../shared/file-sources'
 import { fileIndexService } from './fileIndexService'
+import { ingestionQueue } from './ingestionQueue'
+import { retrievalService } from './retrievalService'
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string
 declare const MAIN_WINDOW_VITE_NAME: string
@@ -271,6 +274,22 @@ ipcMain.handle(IPC_CHANNELS.FILE_INDEX_SOURCE_DELETE, (_event, sourceId: string)
   return null
 })
 
+ipcMain.handle(IPC_CHANNELS.KNOWLEDGE_SEARCH, (_event, params: RetrievalParams) => {
+  return retrievalService.search(params)
+})
+
+ipcMain.handle(IPC_CHANNELS.KNOWLEDGE_ADJACENT, (_event, fileId: number, chunkIndex: number) => {
+  return retrievalService.getAdjacentChunks(fileId, chunkIndex)
+})
+
+ipcMain.handle(IPC_CHANNELS.INGESTION_STATUS, (_event, sourceId?: string) => {
+  return ingestionQueue.getStatus(sourceId)
+})
+
+ipcMain.handle(IPC_CHANNELS.INGESTION_RETRY, (_event, sourceId?: string) => {
+  ingestionQueue.retry(sourceId)
+})
+
 ipcMain.handle(IPC_CHANNELS.CHAT_SEND, (_event, params: SendParams) => {
   return chatService.send(params.conversationId, params.content, params.model)
 })
@@ -333,12 +352,15 @@ app.whenReady().then(async () => {
   createWindow()
 
   const chatDbPath = path.join(app.getPath('userData'), 'chat.db')
+  const fileIndexDbPath = path.join(app.getPath('userData'), 'file-index.db')
   try {
-    fileIndexService.init(
-      path.join(app.getPath('userData'), 'file-index.db'),
-      getSources,
-      mainWindow,
-    )
+    fileIndexService.init(fileIndexDbPath, getSources, mainWindow)
+    const fileIndexDb = fileIndexService.getDb()
+    ingestionQueue.init(fileIndexDb, fileIndexDbPath, (event) => {
+      mainWindow?.webContents.send(IPC_CHANNELS.INGESTION_PROGRESS, event)
+    })
+    ingestionQueue.drainNew()
+    retrievalService.init(fileIndexDb)
     fileIndexService.crawlIfStale()
   } catch (err) {
     console.error('[KORDA] fileIndexService.init FAILED:', err)

@@ -348,6 +348,13 @@ export const fileIndexService = {
     db = null
   },
 
+  getDb(): Database.Database {
+    if (!db) {
+      throw new Error('fileIndexService has not been initialized')
+    }
+    return db
+  },
+
   getStatus(): SourceStatus[] {
     const sources = getSourcesFn()
     return sources.map((source) => {
