@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw } from 'lucide-react'
-import type { IndexStatus } from '../../../shared/ipc-types'
+import type { SourceStatus } from '../../../shared/ipc-types'
 import { humanizeAge } from '../../shared/utils/humanizeAge'
 
 type ServiceStatus = 'connected' | 'unreachable' | 'not-configured' | 'indexing'
@@ -26,18 +26,30 @@ const statusLabels: Record<ServiceStatus, string> = {
   indexing: 'Indexing…',
 }
 
-function indexStatusToServiceStatus(s: IndexStatus): { status: ServiceStatus; detail: string } {
-  switch (s.status) {
-    case 'idle':
-      return { status: 'connected', detail: `${s.fileCount.toLocaleString()} files indexed` }
-    case 'crawling':
-      return { status: 'indexing', detail: `${s.fileCount.toLocaleString()} files…` }
-    case 'error':
-      return { status: 'unreachable', detail: s.crawlError ?? '' }
-    case 'not-configured':
-    default:
-      return { status: 'not-configured', detail: '' }
+function sourceStatusesToServiceStatus(statuses: SourceStatus[]): {
+  status: ServiceStatus
+  detail: string
+} {
+  if (statuses.length === 0) {
+    return { status: 'not-configured', detail: '' }
   }
+  const totalFiles = statuses.reduce((n, s) => n + s.fileCount, 0)
+  const hasCrawling = statuses.some((s) => s.status === 'crawling')
+  const hasError = statuses.some((s) => s.status === 'error')
+  const allNotConfigured = statuses.every(
+    (s) => s.status === 'not-configured' || s.status === 'disabled',
+  )
+  if (hasCrawling) {
+    return { status: 'indexing', detail: `${totalFiles.toLocaleString()} files…` }
+  }
+  if (hasError) {
+    const errored = statuses.find((s) => s.status === 'error')
+    return { status: 'unreachable', detail: errored?.crawlError ?? '' }
+  }
+  if (allNotConfigured) {
+    return { status: 'not-configured', detail: '' }
+  }
+  return { status: 'connected', detail: `${totalFiles.toLocaleString()} files indexed` }
 }
 
 // Skeleton row for loading state — defined at module scope to keep a stable
@@ -45,10 +57,18 @@ function indexStatusToServiceStatus(s: IndexStatus): { status: ServiceStatus; de
 function SkeletonRow({ isLast }: { isLast: boolean }) {
   return (
     <tr className={isLast ? '' : 'border-b border-border'}>
-      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-20" /></td>
-      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-16" /></td>
-      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-24" /></td>
-      <td className="px-4 py-3"><div className="animate-pulse bg-surface-raised h-3 rounded w-14" /></td>
+      <td className="px-4 py-3">
+        <div className="animate-pulse bg-surface-raised h-3 rounded w-20" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="animate-pulse bg-surface-raised h-3 rounded w-16" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="animate-pulse bg-surface-raised h-3 rounded w-24" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="animate-pulse bg-surface-raised h-3 rounded w-14" />
+      </td>
     </tr>
   )
 }
@@ -66,7 +86,7 @@ export default function SystemStatusModule() {
   const refreshFileServer = useCallback(async () => {
     try {
       const s = await window.kordaAPI.fileIndexStatus()
-      const { status, detail } = indexStatusToServiceStatus(s)
+      const { status, detail } = sourceStatusesToServiceStatus(s)
       setFileServerStatus(status)
       setFileServerDetail(detail)
     } catch {
@@ -126,10 +146,18 @@ export default function SystemStatusModule() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-border bg-surface-raised">
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">Service</th>
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">Status</th>
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">Detail</th>
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">Last Checked</th>
+              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+                Service
+              </th>
+              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+                Status
+              </th>
+              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+                Detail
+              </th>
+              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+                Last Checked
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -142,14 +170,21 @@ export default function SystemStatusModule() {
               </>
             ) : (
               services.map((service, i) => (
-                <tr key={service.name} className={i < services.length - 1 ? 'border-b border-border' : ''}>
+                <tr
+                  key={service.name}
+                  className={i < services.length - 1 ? 'border-b border-border' : ''}
+                >
                   <td className="px-4 py-3 text-sm text-text-primary">{service.name}</td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5 text-xs">
-                      <span className={`w-1.5 h-1.5 rounded-full ${statusColors[service.status].split(' ')[0]}`} />
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${statusColors[service.status].split(' ')[0]}`}
+                      />
                       <span
                         className={statusColors[service.status].split(' ')[1]}
-                        {...(service.name === 'File Server' ? { 'data-testid': 'file-server-status' } : {})}
+                        {...(service.name === 'File Server'
+                          ? { 'data-testid': 'file-server-status' }
+                          : {})}
                       >
                         {statusLabels[service.status]}
                       </span>

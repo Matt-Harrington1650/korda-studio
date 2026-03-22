@@ -14,13 +14,19 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockFileIndexStatus.mockResolvedValue({
-    status: 'idle',
-    fileCount: 1000,
-    lastCrawledMs: Date.now(),
-    rootPath: '\\\\SERVER\\projects',
-    crawlError: null,
-  })
+  mockFileIndexStatus.mockResolvedValue([
+    {
+      sourceId: 'default',
+      displayName: 'Server',
+      path: '\\\\SERVER\\projects',
+      type: 'network-share',
+      online: true,
+      status: 'idle',
+      fileCount: 1000,
+      lastCrawledMs: Date.now(),
+      crawlError: null,
+    },
+  ])
   mockFileIndexSearch.mockResolvedValue([])
   vi.stubGlobal('kordaAPI', {
     fileIndexSearch: mockFileIndexSearch,
@@ -28,6 +34,23 @@ beforeEach(() => {
     fileIndexOpen: mockFileIndexOpen,
     fileIndexReindex: mockFileIndexReindex,
     onFileIndexProgress: mockOnFileIndexProgress,
+    fileIndexSourcesList: vi.fn().mockResolvedValue([
+      {
+        id: 'a',
+        displayName: 'Server A',
+        path: '\\\\srv\\a',
+        type: 'network-share',
+        enabled: true,
+      },
+      {
+        id: 'b',
+        displayName: 'Server B',
+        path: '\\\\srv\\b',
+        type: 'network-share',
+        enabled: true,
+      },
+    ]),
+    fileIndexProjectsList: vi.fn().mockResolvedValue(['ProjectA', 'ProjectB']),
   })
 })
 
@@ -45,12 +68,10 @@ describe('ProjectsModule', () => {
   })
 
   it('shows "not configured" empty state when root is not configured', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'not-configured', fileCount: 0, lastCrawledMs: null, rootPath: '', crawlError: null,
-    })
+    ;(window.kordaAPI.fileIndexSourcesList as ReturnType<typeof vi.fn>).mockResolvedValue([])
     render(<ProjectsModule />)
     await waitFor(() => {
-      expect(screen.getByText(/file server not configured/i)).toBeInTheDocument()
+      expect(screen.getByText(/no file sources configured/i)).toBeInTheDocument()
     })
   })
 
@@ -59,10 +80,12 @@ describe('ProjectsModule', () => {
     render(<ProjectsModule />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'C-101' } })
     expect(mockFileIndexSearch).not.toHaveBeenCalled()
-    act(() => { vi.advanceTimersByTime(200) })
-    await waitFor(() => expect(mockFileIndexSearch).toHaveBeenCalledWith(
-      expect.objectContaining({ query: 'C-101' })
-    ))
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
+    await waitFor(() =>
+      expect(mockFileIndexSearch).toHaveBeenCalledWith(expect.objectContaining({ query: 'C-101' })),
+    )
     vi.useRealTimers()
   })
 
@@ -86,7 +109,9 @@ describe('ProjectsModule', () => {
     vi.useFakeTimers()
     render(<ProjectsModule />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'C-101' } })
-    act(() => { vi.advanceTimersByTime(200) })
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
     await waitFor(() => {
       expect(screen.getByText('C-101_IFC.dwg')).toBeInTheDocument()
     })
@@ -97,29 +122,47 @@ describe('ProjectsModule', () => {
     mockFileIndexOpen.mockResolvedValue('')
     mockFileIndexSearch.mockResolvedValue([
       {
-        path: '\\\\SERVER\\P001\\C-101.dwg', name: 'C-101.dwg', ext: 'dwg',
-        sizeBytes: 1024, modifiedMs: Date.now(), isDir: false,
-        project: 'P001', discipline: null, docType: 'drawing',
-        drawingNumber: 'C-101', revision: null, issueStatus: null,
+        path: '\\\\SERVER\\P001\\C-101.dwg',
+        name: 'C-101.dwg',
+        ext: 'dwg',
+        sizeBytes: 1024,
+        modifiedMs: Date.now(),
+        isDir: false,
+        project: 'P001',
+        discipline: null,
+        docType: 'drawing',
+        drawingNumber: 'C-101',
+        revision: null,
+        issueStatus: null,
       },
     ])
     vi.useFakeTimers()
     render(<ProjectsModule />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'C-101' } })
-    act(() => { vi.advanceTimersByTime(200) })
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
     await waitFor(() => screen.getByText('C-101.dwg'))
     fireEvent.click(screen.getByText('C-101.dwg'))
-    await waitFor(() => expect(mockFileIndexOpen).toHaveBeenCalledWith('\\\\SERVER\\P001\\C-101.dwg'))
+    await waitFor(() =>
+      expect(mockFileIndexOpen).toHaveBeenCalledWith('\\\\SERVER\\P001\\C-101.dwg'),
+    )
     vi.useRealTimers()
   })
 
   it('shows Loader2 spinner while fileIndexSearch is in-flight', async () => {
     let resolveSearch!: (val: never[]) => void
-    mockFileIndexSearch.mockReturnValue(new Promise((r) => { resolveSearch = r }))
+    mockFileIndexSearch.mockReturnValue(
+      new Promise((r) => {
+        resolveSearch = r
+      }),
+    )
     vi.useFakeTimers()
     render(<ProjectsModule />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'test' } })
-    await act(async () => { vi.advanceTimersByTime(200) })
+    await act(async () => {
+      vi.advanceTimersByTime(200)
+    })
     // Spinner should be visible while IPC hangs
     await waitFor(() => {
       // The Loader2 icon renders with the lucide class (lucide-react maps Loader2 → lucide-loader-circle)
@@ -127,5 +170,38 @@ describe('ProjectsModule', () => {
     })
     resolveSearch([])
     vi.useRealTimers()
+  })
+})
+
+describe('ProjectsModule source scope', () => {
+  it('shows All Sources option plus one per source when >1 source', async () => {
+    render(<ProjectsModule />)
+    const dropdown = await screen.findByRole('combobox', { name: /source scope/i })
+    expect(dropdown).toBeInTheDocument()
+    expect(screen.getByText('All Sources')).toBeInTheDocument()
+    expect(screen.getByText('Server A')).toBeInTheDocument()
+  })
+
+  it('does not show scope dropdown when only 1 source', async () => {
+    ;(window.kordaAPI.fileIndexSourcesList as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'a',
+        displayName: 'Server A',
+        path: '\\\\srv\\a',
+        type: 'network-share',
+        enabled: true,
+      },
+    ])
+    render(<ProjectsModule />)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByRole('combobox', { name: /source scope/i })).toBeNull()
+  })
+})
+
+describe('ProjectsModule project selector', () => {
+  it('loads and shows available projects', async () => {
+    render(<ProjectsModule />)
+    expect(await screen.findByRole('listbox', { name: /project filter/i })).toBeInTheDocument()
+    expect(screen.getByText('ProjectA')).toBeInTheDocument()
   })
 })

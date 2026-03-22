@@ -23,6 +23,8 @@ interface PreferencesState {
   addBookmark: (bookmark: Bookmark) => void
   updateBookmark: (id: string, updates: Partial<Omit<Bookmark, 'id'>>) => void
   removeBookmark: (id: string) => void
+  pinnedProjects: string[]
+  setPinnedProjects: (projects: string[]) => void
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -34,6 +36,8 @@ export const usePreferencesStore = create<PreferencesState>()(
         disciplines: '',
         sidebarCollapsed: false,
         bookmarks: [],
+        pinnedProjects: [],
+        setPinnedProjects: (projects) => set({ pinnedProjects: projects }),
         setDisplayName: (name) => set({ displayName: name }),
         setFirmName: (firmName) => set({ firmName }),
         setDisciplines: (disciplines) => set({ disciplines }),

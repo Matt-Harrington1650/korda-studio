@@ -58,6 +58,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "@types/uuid": "^10.0.0",
     "electron": "41.0.2",
     "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
@@ -84,6 +85,7 @@
     "react-router": "^7.13.1",
     "react-syntax-highlighter": "^16.1.1",
     "tailwindcss": "^4.2.1",
+    "uuid": "^13.0.0",
     "zustand": "^5.0.11"
   }
 }

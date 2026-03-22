@@ -1,10 +1,12 @@
 import { FileText, Ruler, Calculator, Camera, BookOpen, Briefcase, File } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { FileEntry } from '../../../../shared/ipc-types'
+import type { FileEntry, FileSource } from '../../../../shared/ipc-types'
 
 interface Props {
   results: FileEntry[]
   onOpenError: (msg: string) => void
+  showSourceLabel?: boolean
+  sources?: FileSource[]
 }
 
 const DOC_TYPE_ICONS: Record<string, LucideIcon> = {
@@ -45,7 +47,7 @@ function formatRelativeTime(ms: number): string {
   return `${months}mo ago`
 }
 
-export function SearchResults({ results, onOpenError }: Props) {
+export function SearchResults({ results, onOpenError, showSourceLabel, sources }: Props) {
   if (results.length === 0) return null
 
   const handleOpen = async (entry: FileEntry) => {
@@ -75,6 +77,14 @@ export function SearchResults({ results, onOpenError }: Props) {
             {/* Center: name + breadcrumb + badges */}
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-text-primary truncate">{entry.name}</div>
+              {showSourceLabel &&
+                entry.sourceId &&
+                (() => {
+                  const src = (sources ?? []).find((s) => s.id === entry.sourceId)
+                  return src ? (
+                    <div className="text-xs text-text-secondary">{src.displayName}</div>
+                  ) : null
+                })()}
               {breadcrumb && (
                 <div className="text-[11px] text-text-secondary truncate">{breadcrumb}</div>
               )}

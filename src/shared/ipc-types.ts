@@ -1,3 +1,6 @@
+import type { FileSource, SourceStatus } from './file-sources'
+export type { FileSource, FileSourceType, SourceStatus } from './file-sources'
+
 export interface WindowState {
   x: number
   y: number
@@ -13,6 +16,7 @@ export interface FileEntry {
   sizeBytes: number
   modifiedMs: number
   isDir: boolean
+  sourceId: string | null // present in all search results; null for legacy rows
   project: string | null
   discipline: string | null
   docType: string | null
@@ -21,17 +25,10 @@ export interface FileEntry {
   issueStatus: string | null
 }
 
-export interface IndexStatus {
-  status: 'idle' | 'crawling' | 'error' | 'not-configured'
-  fileCount: number
-  lastCrawledMs: number | null
-  rootPath: string
-  crawlError: string | null
-}
-
 export interface SearchParams {
   query: string
-  project?: string
+  sourceId?: string // omit to search all sources
+  project?: string | string[] // single value or multi-select array
   discipline?: string
   docType?: string
   ext?: string
@@ -75,9 +72,9 @@ export interface KordaAPI {
   storeGet: <T = string>(key: string) => Promise<T | null>
   storeSet: (key: string, value: unknown | null) => Promise<void>
   fileIndexSearch: (params: SearchParams) => Promise<FileEntry[]>
-  fileIndexStatus: () => Promise<IndexStatus>
+  fileIndexStatus: () => Promise<SourceStatus[]>
   fileIndexOpen: (path: string) => Promise<string>
-  fileIndexReindex: () => Promise<void>
+  fileIndexReindex: (sourceId?: string) => Promise<void>
   onFileIndexProgress: (cb: (count: number) => void) => () => void
   chatSend: (params: SendParams) => Promise<{ messageId: string }>
   chatStop: () => Promise<void>
@@ -96,6 +93,10 @@ export interface KordaAPI {
     cb: (data: { messageId: string; inputTokens: number; outputTokens: number }) => void,
   ) => () => void
   onChatError: (cb: (message: string) => void) => () => void
+  fileIndexSourcesList: () => Promise<FileSource[]>
+  fileIndexSourceSave: (source: FileSource) => Promise<void>
+  fileIndexSourceDelete: (sourceId: string) => Promise<string | null>
+  fileIndexProjectsList: (sourceId?: string) => Promise<string[]>
 }
 
 // Channel names as constants to prevent typos
@@ -128,4 +129,8 @@ export const IPC_CHANNELS = {
   CHAT_TOKEN: 'chat:token',
   CHAT_DONE: 'chat:done',
   CHAT_ERROR: 'chat:error',
+  FILE_INDEX_SOURCES_LIST: 'file-index:sources-list',
+  FILE_INDEX_SOURCE_SAVE: 'file-index:source-save',
+  FILE_INDEX_SOURCE_DELETE: 'file-index:source-delete',
+  FILE_INDEX_PROJECTS_LIST: 'file-index:projects-list',
 } as const

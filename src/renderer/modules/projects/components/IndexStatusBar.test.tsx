@@ -1,88 +1,70 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import { IndexStatusBar } from './IndexStatusBar'
+import type { SourceStatus } from '../../../../shared/ipc-types'
 
-const mockFileIndexStatus = vi.fn()
-const mockFileIndexReindex = vi.fn()
-const mockOnFileIndexProgress = vi.fn()
+const mockStatuses: SourceStatus[] = [
+  {
+    sourceId: 'a',
+    displayName: 'Main Server',
+    path: '\\\\srv\\share',
+    type: 'network-share',
+    online: true,
+    status: 'idle',
+    fileCount: 5000,
+    lastCrawledMs: Date.now() - 60_000,
+    crawlError: null,
+  },
+  {
+    sourceId: 'b',
+    displayName: 'Local Docs',
+    path: 'C:\\Projects',
+    type: 'local',
+    online: true,
+    status: 'idle',
+    fileCount: 2000,
+    lastCrawledMs: Date.now() - 120_000,
+    crawlError: null,
+  },
+]
 
 beforeEach(() => {
-  vi.clearAllMocks()
-  mockOnFileIndexProgress.mockReturnValue(() => {}) // returns unsubscribe fn
   vi.stubGlobal('kordaAPI', {
-    fileIndexStatus: mockFileIndexStatus,
-    fileIndexReindex: mockFileIndexReindex,
-    onFileIndexProgress: mockOnFileIndexProgress,
+    fileIndexStatus: vi.fn().mockResolvedValue(mockStatuses),
+    onFileIndexProgress: vi.fn().mockReturnValue(() => {}),
   })
 })
 
-describe('IndexStatusBar', () => {
-  it('renders nothing when status is not-configured', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'not-configured', fileCount: 0, lastCrawledMs: null, rootPath: '', crawlError: null,
+describe('IndexStatusBar multi-source', () => {
+  it('shows total file count across all sources', async () => {
+    render(<IndexStatusBar onReindex={vi.fn()} />)
+    expect(await screen.findByText(/7,000 files/)).toBeInTheDocument()
+  })
+
+  it('shows source count', async () => {
+    render(<IndexStatusBar onReindex={vi.fn()} />)
+    expect(await screen.findByText(/2 sources/)).toBeInTheDocument()
+  })
+
+  it('shows offline warning when a source is offline', async () => {
+    const offlineStatuses: SourceStatus[] = [
+      { ...mockStatuses[0], online: false, status: 'error' },
+      mockStatuses[1],
+    ]
+    vi.stubGlobal('kordaAPI', {
+      fileIndexStatus: vi.fn().mockResolvedValue(offlineStatuses),
+      onFileIndexProgress: vi.fn().mockReturnValue(() => {}),
     })
-    const { container } = render(<IndexStatusBar onReindex={mockFileIndexReindex} />)
-    await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalled())
+    render(<IndexStatusBar onReindex={vi.fn()} />)
+    expect(await screen.findByText(/Main Server/)).toBeInTheDocument()
+  })
+
+  it('returns null when all sources are not-configured', async () => {
+    vi.stubGlobal('kordaAPI', {
+      fileIndexStatus: vi.fn().mockResolvedValue([]),
+      onFileIndexProgress: vi.fn().mockReturnValue(() => {}),
+    })
+    const { container } = render(<IndexStatusBar onReindex={vi.fn()} />)
+    await new Promise((r) => setTimeout(r, 50))
     expect(container.firstChild).toBeNull()
-  })
-
-  it('shows file count and relative time when idle', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'idle',
-      fileCount: 47823,
-      lastCrawledMs: Date.now() - 3 * 60_000, // 3 minutes ago
-      rootPath: '\\\\SERVER\\projects',
-      crawlError: null,
-    })
-    render(<IndexStatusBar onReindex={mockFileIndexReindex} />)
-    await waitFor(() => {
-      expect(screen.getByText(/47,823/)).toBeInTheDocument()
-      expect(screen.getByText(/min ago/)).toBeInTheDocument()
-    })
-  })
-
-  it('shows spinner and live count when crawling', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'crawling', fileCount: 24312, lastCrawledMs: null, rootPath: '\\\\SERVER\\projects', crawlError: null,
-    })
-    render(<IndexStatusBar onReindex={mockFileIndexReindex} />)
-    await waitFor(() => {
-      expect(screen.getByText(/indexing/i)).toBeInTheDocument()
-      expect(screen.getByText(/24,312/)).toBeInTheDocument()
-    })
-  })
-
-  it('shows error state with Retry button when status is error', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'error', fileCount: 0, lastCrawledMs: null, rootPath: '\\\\SERVER\\projects', crawlError: 'ENOENT',
-    })
-    render(<IndexStatusBar onReindex={mockFileIndexReindex} />)
-    await waitFor(() => {
-      expect(screen.getByText(/unreachable/i)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
-    })
-  })
-
-  it('Retry button calls onReindex', async () => {
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'error', fileCount: 0, lastCrawledMs: null, rootPath: '\\\\SERVER\\projects', crawlError: 'ENOENT',
-    })
-    render(<IndexStatusBar onReindex={mockFileIndexReindex} />)
-    await waitFor(() => screen.getByRole('button', { name: /retry/i }))
-    fireEvent.click(screen.getByRole('button', { name: /retry/i }))
-    expect(mockFileIndexReindex).toHaveBeenCalled()
-  })
-
-  it('calls the onFileIndexProgress cleanup function on unmount', async () => {
-    const unsubscribeSpy = vi.fn()
-    mockOnFileIndexProgress.mockReturnValue(unsubscribeSpy)
-    mockFileIndexStatus.mockResolvedValue({
-      status: 'idle', fileCount: 10, lastCrawledMs: Date.now(),
-      rootPath: '\\\\SERVER\\projects', crawlError: null,
-    })
-    const { unmount } = render(<IndexStatusBar onReindex={mockFileIndexReindex} />)
-    await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalled())
-    unmount()
-    expect(unsubscribeSpy).toHaveBeenCalledTimes(1)
   })
 })

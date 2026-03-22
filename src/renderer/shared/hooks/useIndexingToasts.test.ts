@@ -23,7 +23,20 @@ afterEach(() => {
 })
 
 function makeStatus(status: string, fileCount = 0) {
-  return { status, fileCount, lastCrawledMs: null, rootPath: '', crawlError: null }
+  // Returns SourceStatus[] (fileIndexStatus now returns an array)
+  return [
+    {
+      sourceId: 'src-1',
+      displayName: 'Main Server',
+      path: '\\\\SERVER\\share',
+      type: 'network-share',
+      online: true,
+      status,
+      fileCount,
+      lastCrawledMs: null,
+      crawlError: null,
+    },
+  ]
 }
 
 describe('useIndexingToasts', () => {
@@ -41,7 +54,9 @@ describe('useIndexingToasts', () => {
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(1))
 
     // Simulate progress event
-    act(() => { progressCb(100) })
+    act(() => {
+      progressCb(100)
+    })
 
     const toasts = useToastStore.getState().toasts
     expect(toasts).toHaveLength(1)
@@ -60,8 +75,12 @@ describe('useIndexingToasts', () => {
     renderHook(() => useIndexingToasts())
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(1))
 
-    act(() => { progressCb(100) })
-    act(() => { progressCb(200) }) // second event in same crawl
+    act(() => {
+      progressCb(100)
+    })
+    act(() => {
+      progressCb(200)
+    }) // second event in same crawl
 
     const toasts = useToastStore.getState().toasts
     expect(toasts).toHaveLength(1) // only one toast
@@ -70,8 +89,8 @@ describe('useIndexingToasts', () => {
   it('fires success toast "Index ready" when crawling→idle transition detected', async () => {
     // First poll: crawling
     mockFileIndexStatus
-      .mockResolvedValueOnce(makeStatus('crawling', 0))   // baseline on mount
-      .mockResolvedValueOnce(makeStatus('idle', 42))       // first poll interval
+      .mockResolvedValueOnce(makeStatus('crawling', 0)) // baseline on mount
+      .mockResolvedValueOnce(makeStatus('idle', 42)) // first poll interval
 
     mockOnFileIndexProgress.mockReturnValue(() => {})
 
@@ -79,7 +98,9 @@ describe('useIndexingToasts', () => {
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(1))
 
     // Advance 5s to trigger the poll interval
-    await act(async () => { vi.advanceTimersByTime(5_001) })
+    await act(async () => {
+      vi.advanceTimersByTime(5_001)
+    })
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(2))
 
     const toasts = useToastStore.getState().toasts
@@ -97,7 +118,9 @@ describe('useIndexingToasts', () => {
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(1))
 
     // Advance 5s — no crawling→idle transition
-    await act(async () => { vi.advanceTimersByTime(5_001) })
+    await act(async () => {
+      vi.advanceTimersByTime(5_001)
+    })
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(2))
 
     expect(useToastStore.getState().toasts).toHaveLength(0)
@@ -105,7 +128,7 @@ describe('useIndexingToasts', () => {
 
   it('resets crawlToastFired after crawling→idle so second crawl can fire again', async () => {
     mockFileIndexStatus
-      .mockResolvedValueOnce(makeStatus('idle'))     // baseline
+      .mockResolvedValueOnce(makeStatus('idle')) // baseline
       .mockResolvedValueOnce(makeStatus('idle', 10)) // first poll — no transition
 
     let progressCb!: (count: number) => void
@@ -118,7 +141,9 @@ describe('useIndexingToasts', () => {
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(1))
 
     // First crawl: progress event → toast fires
-    act(() => { progressCb(50) })
+    act(() => {
+      progressCb(50)
+    })
     expect(useToastStore.getState().toasts).toHaveLength(1)
 
     // Simulate crawling→idle transition.
@@ -133,13 +158,19 @@ describe('useIndexingToasts', () => {
       .mockResolvedValueOnce(makeStatus('crawling', 50))
       .mockResolvedValueOnce(makeStatus('idle', 50))
     // Tick 1: consumes the pre-queued 'idle/10' response — no transition
-    await act(async () => { vi.advanceTimersByTime(5_001) })
+    await act(async () => {
+      vi.advanceTimersByTime(5_001)
+    })
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(2))
     // Tick 2: crawling → prevStatusRef = 'crawling'
-    await act(async () => { vi.advanceTimersByTime(5_001) })
+    await act(async () => {
+      vi.advanceTimersByTime(5_001)
+    })
     await waitFor(() => expect(mockFileIndexStatus).toHaveBeenCalledTimes(3))
     // Tick 3: idle → detects crawling→idle, fires success toast
-    await act(async () => { vi.advanceTimersByTime(5_001) })
+    await act(async () => {
+      vi.advanceTimersByTime(5_001)
+    })
     await waitFor(() => {
       const toasts = useToastStore.getState().toasts
       expect(toasts.some((t) => t.type === 'success')).toBe(true)
@@ -147,9 +178,11 @@ describe('useIndexingToasts', () => {
 
     // After reset, a second progress event should fire info toast again
     useToastStore.setState({ toasts: [] })
-    act(() => { progressCb(10) })
+    act(() => {
+      progressCb(10)
+    })
     await waitFor(() =>
-      expect(useToastStore.getState().toasts.some((t) => t.type === 'info')).toBe(true)
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'info')).toBe(true),
     )
   })
 
@@ -164,7 +197,9 @@ describe('useIndexingToasts', () => {
 
     expect(unsubscribeSpy).toHaveBeenCalledTimes(1)
     // Advance time — no more fileIndexStatus calls after unmount
-    await act(async () => { vi.advanceTimersByTime(10_000) })
+    await act(async () => {
+      vi.advanceTimersByTime(10_000)
+    })
     expect(mockFileIndexStatus).toHaveBeenCalledTimes(1) // still just 1 (baseline only)
   })
 })
