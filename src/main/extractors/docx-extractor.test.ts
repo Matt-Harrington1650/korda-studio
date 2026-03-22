@@ -1,16 +1,20 @@
-import mammoth from 'mammoth'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { extractDocx } from './docx-extractor'
 
+const { mockConvertToMarkdown } = vi.hoisted(() => ({
+  mockConvertToMarkdown: vi.fn(),
+}))
+
 vi.mock('mammoth', () => ({
   default: {
-    convertToMarkdown: vi.fn(),
+    convertToMarkdown: mockConvertToMarkdown,
   },
 }))
 
 describe('docx-extractor', () => {
   beforeEach(() => {
-    vi.mocked(mammoth.convertToMarkdown).mockResolvedValue({
+    mockConvertToMarkdown.mockReset()
+    mockConvertToMarkdown.mockResolvedValue({
       value: '# Introduction\n\nThis is the intro.\n\n## Methods\n\nThe methods section.',
       messages: [],
     })

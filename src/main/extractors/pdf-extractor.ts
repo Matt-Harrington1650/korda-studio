@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-import pdfParse from 'pdf-parse'
+import { PDFParse } from 'pdf-parse'
 
 export interface PdfExtractResult {
   text: string
@@ -9,15 +9,14 @@ export interface PdfExtractResult {
 
 export async function extractPdf(filePath: string): Promise<PdfExtractResult> {
   const buffer = await fs.readFile(filePath)
-  const data = await pdfParse(buffer)
-  const pageTexts = data.text
-    .split('\f')
-    .map((page) => page.trim())
-    .filter(Boolean)
+  const parser = new PDFParse({ data: buffer })
+  const data = await parser.getText()
+  const pageTexts = data.pages.map((page: { text: string }) => page.text)
+  await parser.destroy()
 
   return {
     text: data.text,
     pageTexts,
-    pageCount: data.numpages,
+    pageCount: data.total,
   }
 }

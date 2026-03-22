@@ -5,8 +5,13 @@ export interface DocxExtractResult {
   headingMap: Map<number, string>
 }
 
+interface MammothMarkdownApi {
+  convertToMarkdown(input: { path: string }): Promise<{ value: string }>
+}
+
 export async function extractDocx(filePath: string): Promise<DocxExtractResult> {
-  const result = await mammoth.convertToMarkdown({ path: filePath })
+  const mammothMarkdown = mammoth as unknown as MammothMarkdownApi
+  const result = await mammothMarkdown.convertToMarkdown({ path: filePath })
   const markdown = result.value
   const headingMap = new Map<number, string>()
   const headingRe = /^#{1,6}\s+(.+)$/gm
