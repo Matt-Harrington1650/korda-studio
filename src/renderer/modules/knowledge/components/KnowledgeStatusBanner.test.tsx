@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import type { IngestionStatus } from '../../../../../shared/ipc-types'
+import type { IngestionStatus } from '../../../../shared/ipc-types'
 import { KnowledgeStatusBanner } from './KnowledgeStatusBanner'
 
 const idle: IngestionStatus = {

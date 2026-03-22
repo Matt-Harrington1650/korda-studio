@@ -1,4 +1,4 @@
-import type { RetrievalResult } from '../../../../../shared/ipc-types'
+import type { RetrievalResult } from '../../../../shared/ipc-types'
 
 interface KnowledgeResultsProps {
   results: RetrievalResult[]

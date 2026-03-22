@@ -1,4 +1,4 @@
-import type { IngestionStatus } from '../../../../../shared/ipc-types'
+import type { IngestionStatus } from '../../../../shared/ipc-types'
 
 interface KnowledgeStatusBannerProps {
   status: IngestionStatus | null

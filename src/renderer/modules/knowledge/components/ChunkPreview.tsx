@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ChunkRecord, RetrievalResult } from '../../../../../shared/ipc-types'
+import type { ChunkRecord, RetrievalResult } from '../../../../shared/ipc-types'
 
 interface ChunkPreviewProps {
   result: RetrievalResult

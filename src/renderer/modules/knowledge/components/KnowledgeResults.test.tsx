@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import type { RetrievalResult } from '../../../../../shared/ipc-types'
+import type { RetrievalResult } from '../../../../shared/ipc-types'
 import { KnowledgeResults } from './KnowledgeResults'
 
 const makeResult = (id: string): RetrievalResult => ({
