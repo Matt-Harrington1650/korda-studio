@@ -3,6 +3,9 @@ export interface AIConfig {
   anthropicApiKey: string
   defaultModel: string
   firmContext: string
+  voyageApiKey?: string
+  cohereApiKey?: string
+  contextualEnrichment?: boolean
 }
 
 export const DEFAULT_AI_MODEL = 'claude-sonnet-4-6'
@@ -24,4 +27,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   anthropicApiKey: '',
   defaultModel: DEFAULT_AI_MODEL,
   firmContext: DEFAULT_FIRM_CONTEXT,
+  voyageApiKey: '',
+  cohereApiKey: '',
+  contextualEnrichment: false,
 }

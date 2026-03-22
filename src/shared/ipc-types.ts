@@ -1,5 +1,11 @@
 import type { FileSource, SourceStatus } from './file-sources'
+import type { PipelineState } from './contracts/index-record'
+import type { ChunkRecord } from './contracts/chunk-record'
+import type { RetrievalParams, RetrievalResult } from './contracts/retrieval-contract'
 export type { FileSource, FileSourceType, SourceStatus } from './file-sources'
+export type { RetrievalParams, RetrievalResult } from './contracts/retrieval-contract'
+export type { ChunkRecord } from './contracts/chunk-record'
+export type { PipelineState } from './contracts/index-record'
 
 export interface WindowState {
   x: number
@@ -33,6 +39,27 @@ export interface SearchParams {
   docType?: string
   ext?: string
   limit?: number
+}
+
+export interface IngestionStatus {
+  new: number
+  queued: number
+  extracting: number
+  chunking: number
+  contextualizing: number
+  indexed: number
+  failed: number
+  skipped: number
+  total: number
+  totalChunks: number
+  avgChunksPerFile: number
+}
+
+export interface IngestionProgressEvent {
+  fileId: number
+  state: PipelineState
+  chunkCount?: number
+  error?: string
 }
 
 export interface Conversation {
@@ -97,6 +124,14 @@ export interface KordaAPI {
   fileIndexSourceSave: (source: FileSource) => Promise<void>
   fileIndexSourceDelete: (sourceId: string) => Promise<string | null>
   fileIndexProjectsList: (sourceId?: string) => Promise<string[]>
+  knowledgeSearch: (params: RetrievalParams) => Promise<RetrievalResult[]>
+  knowledgeAdjacent: (
+    fileId: number,
+    chunkIndex: number,
+  ) => Promise<{ prev: ChunkRecord | null; next: ChunkRecord | null }>
+  ingestionStatus: (sourceId?: string) => Promise<IngestionStatus>
+  ingestionRetry: (sourceId?: string) => Promise<void>
+  onIngestionProgress: (cb: (event: IngestionProgressEvent) => void) => () => void
 }
 
 // Channel names as constants to prevent typos
@@ -133,4 +168,9 @@ export const IPC_CHANNELS = {
   FILE_INDEX_SOURCE_SAVE: 'file-index:source-save',
   FILE_INDEX_SOURCE_DELETE: 'file-index:source-delete',
   FILE_INDEX_PROJECTS_LIST: 'file-index:projects-list',
+  KNOWLEDGE_SEARCH: 'knowledge:search',
+  KNOWLEDGE_ADJACENT: 'knowledge:adjacent',
+  INGESTION_STATUS: 'ingestion:status',
+  INGESTION_RETRY: 'ingestion:retry',
+  INGESTION_PROGRESS: 'ingestion:progress',
 } as const
