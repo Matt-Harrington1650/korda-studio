@@ -8,6 +8,7 @@ export const router = createMemoryRouter([
     children: [
       { index: true, lazy: () => import('./modules/home') },
       { path: 'projects', lazy: () => import('./modules/projects') },
+      { path: 'knowledge', lazy: () => import('./modules/knowledge') },
       { path: 'chat', lazy: () => import('./modules/chat') },
       { path: 'bookmarks', lazy: () => import('./modules/bookmarks') },
       { path: 'status', lazy: () => import('./modules/system-status') },

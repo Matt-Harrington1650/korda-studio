@@ -1,3 +1,4 @@
+import { router } from './router'
 import { modules, sidebarModules, allActions } from './moduleRegistry'
 
 describe('moduleRegistry', () => {
@@ -15,10 +16,27 @@ describe('moduleRegistry', () => {
     const ids = modules.map((m) => m.id)
     expect(ids).toContain('home')
     expect(ids).toContain('projects')
+    expect(ids).toContain('knowledge')
     expect(ids).toContain('chat')
     expect(ids).toContain('bookmarks')
     expect(ids).toContain('system-status')
     expect(ids).toContain('settings')
+  })
+
+  it('places Knowledge between Projects and Chat in the work modules', () => {
+    const ids = sidebarModules
+      .filter((moduleDefinition) => moduleDefinition.group === 'work')
+      .map((m) => m.id)
+
+    expect(ids.indexOf('projects')).toBeLessThan(ids.indexOf('knowledge'))
+    expect(ids.indexOf('knowledge')).toBeLessThan(ids.indexOf('chat'))
+  })
+
+  it('registers a /knowledge route in the app router', () => {
+    const shellRoute = router.routes[0] as { children?: Array<{ path?: string }> }
+    const childPaths = (shellRoute.children ?? []).map((child) => child.path)
+
+    expect(childPaths).toContain('knowledge')
   })
 
   it('sorts sidebar modules by group then order', () => {

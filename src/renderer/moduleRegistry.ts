@@ -1,5 +1,6 @@
 import { definition as home } from './modules/home'
 import { definition as projects } from './modules/projects'
+import { definition as knowledge } from './modules/knowledge'
 import { definition as chat } from './modules/chat'
 import { definition as bookmarks } from './modules/bookmarks'
 import { definition as systemStatus } from './modules/system-status'
@@ -7,7 +8,15 @@ import { definition as settings } from './modules/settings'
 import type { ModuleDefinition } from '@shared/types'
 import type { CommandAction } from '@shared/types'
 
-export const modules: ModuleDefinition[] = [home, projects, chat, bookmarks, systemStatus, settings]
+export const modules: ModuleDefinition[] = [
+  home,
+  projects,
+  knowledge,
+  chat,
+  bookmarks,
+  systemStatus,
+  settings,
+]
 
 const groupRank: Record<string, number> = { work: 0, system: 1 }
 
