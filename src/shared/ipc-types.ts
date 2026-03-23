@@ -55,6 +55,15 @@ export interface IngestionStatus {
   avgChunksPerFile: number
 }
 
+export interface FailedIngestionFile {
+  fileId: number
+  path: string
+  name: string
+  sourceId: string
+  error: string | null
+  updatedAt: number | null
+}
+
 export interface IngestionProgressEvent {
   fileId: number
   state: PipelineState
@@ -130,6 +139,7 @@ export interface KordaAPI {
     chunkIndex: number,
   ) => Promise<{ prev: ChunkRecord | null; next: ChunkRecord | null }>
   ingestionStatus: (sourceId?: string) => Promise<IngestionStatus>
+  ingestionFailedFiles: (sourceId?: string) => Promise<FailedIngestionFile[]>
   ingestionRetry: (sourceId?: string) => Promise<void>
   onIngestionProgress: (cb: (event: IngestionProgressEvent) => void) => () => void
 }
@@ -171,6 +181,7 @@ export const IPC_CHANNELS = {
   KNOWLEDGE_SEARCH: 'knowledge:search',
   KNOWLEDGE_ADJACENT: 'knowledge:adjacent',
   INGESTION_STATUS: 'ingestion:status',
+  INGESTION_FAILED_FILES: 'ingestion:failed-files',
   INGESTION_RETRY: 'ingestion:retry',
   INGESTION_PROGRESS: 'ingestion:progress',
 } as const

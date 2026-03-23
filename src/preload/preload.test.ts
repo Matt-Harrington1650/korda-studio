@@ -67,13 +67,15 @@ describe('preload knowledge and ingestion bridges', () => {
     )
   })
 
-  it('bridges ingestionStatus and ingestionRetry through ipcRenderer.invoke', () => {
+  it('bridges ingestionStatus, ingestionFailedFiles, and ingestionRetry through ipcRenderer.invoke', () => {
     const api = electronState.exposedApi as {
       ingestionStatus: (sourceId?: string) => unknown
+      ingestionFailedFiles: (sourceId?: string) => unknown
       ingestionRetry: (sourceId?: string) => unknown
     }
 
     api.ingestionStatus('src-1')
+    api.ingestionFailedFiles('src-1')
     api.ingestionRetry('src-1')
 
     expect(electronState.ipcRenderer.invoke).toHaveBeenNthCalledWith(
@@ -83,6 +85,11 @@ describe('preload knowledge and ingestion bridges', () => {
     )
     expect(electronState.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       2,
+      IPC_CHANNELS.INGESTION_FAILED_FILES,
+      'src-1',
+    )
+    expect(electronState.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      3,
       IPC_CHANNELS.INGESTION_RETRY,
       'src-1',
     )

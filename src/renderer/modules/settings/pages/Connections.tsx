@@ -1,7 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import { Network, Folder, Cloud, RefreshCw, Pencil, Trash2 } from 'lucide-react'
-import type { FileSource, FileSourceType, SourceStatus } from '../../../../shared/ipc-types'
+import { Cloud, Folder, Network, Pencil, RefreshCw, Trash2 } from 'lucide-react'
+import type {
+  FailedIngestionFile,
+  FileSource,
+  FileSourceType,
+  IngestionStatus,
+  SourceStatus,
+} from '../../../../shared/ipc-types'
 import { detectSourceType } from '../../../../shared/file-sources'
 
 const TYPE_ICONS: Record<FileSourceType, React.ReactNode> = {
@@ -37,45 +43,94 @@ const emptyForm = (): SourceFormState => ({
 export function Component() {
   const [sources, setSources] = useState<FileSource[]>([])
   const [statuses, setStatuses] = useState<SourceStatus[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null) // null = closed, 'new' = add form
+  const [ingestionStatuses, setIngestionStatuses] = useState<Record<string, IngestionStatus>>({})
+  const [failedFilesBySource, setFailedFilesBySource] = useState<
+    Record<string, FailedIngestionFile[]>
+  >({})
+  const [expandedFailedSources, setExpandedFailedSources] = useState<Record<string, boolean>>({})
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<SourceFormState>(emptyForm())
   const [toast, setToast] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const showToast = (msg: string) => {
-    setToast(msg)
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+  const showToast = (message: string) => {
+    setToast(message)
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+    }
     toastTimerRef.current = setTimeout(() => setToast(null), 4_000)
   }
 
   const loadSources = useCallback(async () => {
     try {
-      const [s, st] = await Promise.all([
+      const [nextSources, nextStatuses] = await Promise.all([
         window.kordaAPI.fileIndexSourcesList(),
         window.kordaAPI.fileIndexStatus(),
       ])
-      setSources(s)
-      setStatuses(st)
+
+      const ingestionEntries = await Promise.all(
+        nextSources.map(async (source) => {
+          try {
+            const ingestionStatus = await window.kordaAPI.ingestionStatus(source.id)
+            return [source.id, ingestionStatus] as const
+          } catch {
+            return null
+          }
+        }),
+      )
+
+      setSources(nextSources)
+      setStatuses(nextStatuses)
+      setIngestionStatuses(
+        Object.fromEntries(
+          ingestionEntries.filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
+        ),
+      )
     } catch {
-      /* ignore */
+      // Ignore read failures so the page can keep rendering partial state.
     }
   }, [])
 
   useEffect(() => {
-    loadSources()
-    const interval = setInterval(loadSources, 10_000)
+    void loadSources()
+    const interval = setInterval(() => {
+      void loadSources()
+    }, 10_000)
+
     return () => {
       clearInterval(interval)
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current)
+      }
     }
   }, [loadSources])
 
-  const statusFor = (id: string) => statuses.find((s) => s.sourceId === id)
+  const statusFor = (id: string) => statuses.find((status) => status.sourceId === id)
+  const ingestionStatusFor = (id: string) => ingestionStatuses[id]
+
+  const loadFailedFiles = useCallback(async (sourceId: string) => {
+    try {
+      const failedFiles = await window.kordaAPI.ingestionFailedFiles(sourceId)
+      setFailedFilesBySource((current) => ({
+        ...current,
+        [sourceId]: failedFiles,
+      }))
+    } catch {
+      setFailedFilesBySource((current) => ({
+        ...current,
+        [sourceId]: [],
+      }))
+    }
+  }, [])
 
   const handleSave = async () => {
-    if (!form.path.trim() || !form.displayName.trim()) return
+    if (!form.path.trim() || !form.displayName.trim()) {
+      return
+    }
+
     setSaving(true)
+
     try {
       const source: FileSource = {
         id: form.id,
@@ -88,8 +143,8 @@ export function Component() {
       await loadSources()
       setEditingId(null)
       showToast('Source saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : String(err))
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error))
     } finally {
       setSaving(false)
     }
@@ -102,13 +157,38 @@ export function Component() {
         showToast(result)
         return
       }
+
       await loadSources()
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : String(err))
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error))
     }
   }
 
   const handleReindexAll = () => window.kordaAPI.fileIndexReindex(undefined)
+
+  const handleRetryFailed = async (sourceId: string) => {
+    try {
+      await window.kordaAPI.ingestionRetry(sourceId)
+      await loadSources()
+      if (expandedFailedSources[sourceId]) {
+        await loadFailedFiles(sourceId)
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const toggleFailedFiles = async (sourceId: string) => {
+    const nextExpanded = !expandedFailedSources[sourceId]
+    setExpandedFailedSources((current) => ({
+      ...current,
+      [sourceId]: nextExpanded,
+    }))
+
+    if (nextExpanded) {
+      await loadFailedFiles(sourceId)
+    }
+  }
 
   const startEdit = (source: FileSource) => {
     setForm({ ...source })
@@ -121,8 +201,8 @@ export function Component() {
   }
 
   const totalFiles = statuses
-    .filter((s) => s.status !== 'disabled')
-    .reduce((n, s) => n + s.fileCount, 0)
+    .filter((status) => status.status !== 'disabled')
+    .reduce((count, status) => count + status.fileCount, 0)
 
   return (
     <div className="space-y-6">
@@ -130,68 +210,101 @@ export function Component() {
         <h2 className="text-lg font-medium text-text-primary">Connections</h2>
         <button
           onClick={handleReindexAll}
-          className="px-3 py-1.5 text-xs bg-surface-raised border border-border rounded
-                     text-text-secondary hover:text-text-primary transition-colors"
+          className="rounded border border-border bg-surface-raised px-3 py-1.5 text-xs
+                     text-text-secondary transition-colors hover:text-text-primary"
         >
           Reindex All
         </button>
       </div>
 
-      {/* Summary */}
       <p className="text-xs text-text-secondary">
         {sources.length} source{sources.length !== 1 ? 's' : ''} · {totalFiles.toLocaleString()}{' '}
         files total
       </p>
 
-      {/* Toast */}
       {toast && (
-        <div className="px-3 py-2 text-sm bg-surface-raised border border-border rounded text-text-primary">
+        <div className="rounded border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary">
           {toast}
         </div>
       )}
 
-      {/* Source list */}
       <div className="space-y-2">
         {sources.map((source) => {
-          const st = statusFor(source.id)
-          const isOffline = st && !st.online
+          const status = statusFor(source.id)
+          const ingestion = ingestionStatusFor(source.id)
+          const pendingCount =
+            (ingestion?.queued ?? 0) +
+            (ingestion?.extracting ?? 0) +
+            (ingestion?.chunking ?? 0) +
+            (ingestion?.contextualizing ?? 0)
+          const failedFiles = failedFilesBySource[source.id] ?? []
+          const isFailedExpanded = expandedFailedSources[source.id] ?? false
+          const isOffline = status?.online === false
           const isEditing = editingId === source.id
 
           return (
-            <div key={source.id} className="border border-border rounded overflow-hidden">
+            <div key={source.id} className="overflow-hidden rounded border border-border">
               <div
-                className={`flex items-center gap-3 px-3 py-2 bg-surface-raised ${!source.enabled ? 'opacity-50' : ''}`}
+                className={`flex items-center gap-3 bg-surface-raised px-3 py-2 ${!source.enabled ? 'opacity-50' : ''}`}
               >
                 <span className="text-text-secondary">{TYPE_ICONS[source.type]}</span>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-text-primary truncate">
+                    <span className="truncate text-sm font-medium text-text-primary">
                       {source.displayName}
                     </span>
                     {!source.enabled && (
-                      <span className="text-xs px-1.5 py-0.5 bg-surface border border-border rounded text-text-secondary">
+                      <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-xs text-text-secondary">
                         Disabled
                       </span>
                     )}
                     {isOffline && source.enabled && (
-                      <span className="text-xs text-amber-400">● Offline</span>
+                      <span className="text-xs text-amber-400">Offline</span>
                     )}
-                    {source.enabled && !isOffline && st?.status === 'idle' && (
-                      <span className="text-xs text-green-500">● Online</span>
+                    {source.enabled && !isOffline && status?.status === 'idle' && (
+                      <span className="text-xs text-green-500">Online</span>
                     )}
                   </div>
-                  <div className="text-xs text-text-secondary truncate">{source.path}</div>
-                  {st && (
+                  <div className="truncate text-xs text-text-secondary">{source.path}</div>
+                  {status && (
                     <div className="text-xs text-text-secondary">
-                      {st.fileCount.toLocaleString()} files
-                      {st.lastCrawledMs ? ` · ${new Date(st.lastCrawledMs).toLocaleString()}` : ''}
+                      {status.fileCount.toLocaleString()} files
+                      {status.lastCrawledMs
+                        ? ` · ${new Date(status.lastCrawledMs).toLocaleString()}`
+                        : ''}
                     </div>
                   )}
-                  {st?.crawlError && (
-                    <div className="text-xs text-error truncate">{st.crawlError}</div>
+                  {ingestion && (
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-secondary">
+                      <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-300">
+                        {ingestion.indexed.toLocaleString()} indexed
+                      </span>
+                      {ingestion.failed > 0 && (
+                        <button
+                          onClick={() => void toggleFailedFiles(source.id)}
+                          className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-red-200 hover:bg-red-500/20"
+                        >
+                          {ingestion.failed} failed
+                        </button>
+                      )}
+                      {pendingCount > 0 && (
+                        <span className="rounded-full border border-border bg-surface px-2 py-0.5">
+                          {pendingCount.toLocaleString()} queued
+                        </span>
+                      )}
+                      <button
+                        onClick={() => void handleRetryFailed(source.id)}
+                        className="underline hover:text-text-primary"
+                      >
+                        Retry Failed
+                      </button>
+                    </div>
+                  )}
+                  {status?.crawlError && (
+                    <div className="truncate text-xs text-error">{status.crawlError}</div>
                   )}
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex shrink-0 items-center gap-1">
                   <button
                     onClick={() => window.kordaAPI.fileIndexReindex(source.id)}
                     title="Reindex"
@@ -219,7 +332,23 @@ export function Component() {
                 </div>
               </div>
 
-              {/* Inline edit form */}
+              {isFailedExpanded && failedFiles.length > 0 && (
+                <div className="space-y-2 border-t border-border bg-surface px-3 py-3">
+                  {failedFiles.map((failedFile) => (
+                    <div
+                      key={failedFile.fileId}
+                      className="rounded border border-border bg-surface-raised px-3 py-2"
+                    >
+                      <div className="text-sm font-medium text-text-primary">{failedFile.name}</div>
+                      <div className="truncate text-xs text-text-secondary">{failedFile.path}</div>
+                      {failedFile.error && (
+                        <div className="text-xs text-error">{failedFile.error}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {isEditing && (
                 <SourceForm
                   form={form}
@@ -233,9 +362,8 @@ export function Component() {
           )
         })}
 
-        {/* Add new source */}
         {editingId === 'new' ? (
-          <div className="border border-border rounded overflow-hidden">
+          <div className="overflow-hidden rounded border border-border">
             <SourceForm
               form={form}
               setForm={setForm}
@@ -247,8 +375,8 @@ export function Component() {
         ) : (
           <button
             onClick={startAdd}
-            className="w-full px-3 py-2 text-sm text-text-secondary border border-dashed border-border
-                       rounded hover:border-accent hover:text-accent transition-colors"
+            className="w-full rounded border border-dashed border-border px-3 py-2 text-sm
+                       text-text-secondary transition-colors hover:border-accent hover:text-accent"
           >
             + Add Source
           </button>
@@ -268,70 +396,89 @@ interface SourceFormProps {
 
 function SourceForm({ form, setForm, onSave, onCancel, saving }: SourceFormProps) {
   return (
-    <div className="px-3 py-3 bg-surface space-y-2 border-t border-border">
+    <div className="space-y-2 border-t border-border bg-surface px-3 py-3">
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="text-xs text-text-secondary">Display Name</label>
           <input
             type="text"
             value={form.displayName}
-            onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, displayName: event.target.value }))
+            }
             placeholder="Main Server"
-            className="w-full mt-1 px-2 py-1 text-sm bg-surface-raised border border-border rounded
-                       text-text-primary focus:outline-none focus:border-accent"
+            className="mt-1 w-full rounded border border-border bg-surface-raised px-2 py-1 text-sm
+                       text-text-primary focus:border-accent focus:outline-none"
           />
         </div>
         <div>
           <label className="text-xs text-text-secondary">Type</label>
           <select
             value={form.type}
-            onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as FileSourceType }))}
-            className="w-full mt-1 px-2 py-1 text-sm bg-surface-raised border border-border rounded
-                       text-text-secondary focus:outline-none focus:border-accent"
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                type: event.target.value as FileSourceType,
+              }))
+            }
+            className="mt-1 w-full rounded border border-border bg-surface-raised px-2 py-1 text-sm
+                       text-text-secondary focus:border-accent focus:outline-none"
           >
-            {(Object.keys(TYPE_LABELS) as FileSourceType[]).map((t) => (
-              <option key={t} value={t}>
-                {TYPE_LABELS[t]}
+            {(Object.keys(TYPE_LABELS) as FileSourceType[]).map((type) => (
+              <option key={type} value={type}>
+                {TYPE_LABELS[type]}
               </option>
             ))}
           </select>
         </div>
       </div>
+
       <div>
         <label className="text-xs text-text-secondary">Path</label>
         <input
           type="text"
           value={form.path}
-          onChange={(e) => setForm((f) => ({ ...f, path: e.target.value }))}
-          onBlur={(e) => {
-            // Auto-detect type on blur — user can override via the Type dropdown
-            const p = e.target.value.trim()
-            if (p) setForm((f) => ({ ...f, type: detectSourceType(p) }))
+          onChange={(event) => setForm((current) => ({ ...current, path: event.target.value }))}
+          onBlur={(event) => {
+            const nextPath = event.target.value.trim()
+            if (nextPath) {
+              setForm((current) => ({
+                ...current,
+                type: detectSourceType(nextPath),
+              }))
+            }
           }}
-          placeholder="\\SERVER\share"
-          className="w-full mt-1 px-2 py-1 text-sm bg-surface-raised border border-border rounded
-                     text-text-primary focus:outline-none focus:border-accent"
+          placeholder="\\\\SERVER\\share"
+          className="mt-1 w-full rounded border border-border bg-surface-raised px-2 py-1 text-sm
+                     text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
+
       <div className="flex items-center gap-2">
         <label className="text-xs text-text-secondary">
           <input
             type="checkbox"
             checked={form.enabled}
-            onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                enabled: event.target.checked,
+              }))
+            }
             className="mr-1.5"
           />
           Enabled
         </label>
       </div>
+
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={onSave}
           disabled={saving || !form.path.trim() || !form.displayName.trim()}
-          className="px-3 py-1.5 text-xs bg-accent text-white rounded
-                     hover:bg-accent/80 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="rounded bg-accent px-3 py-1.5 text-xs text-white hover:bg-accent/80
+                     disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? 'Saving...' : 'Save'}
         </button>
         <button
           onClick={onCancel}

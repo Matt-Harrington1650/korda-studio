@@ -82,6 +82,8 @@ contextBridge.exposeInMainWorld('kordaAPI', {
     ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_ADJACENT, fileId, chunkIndex),
   ingestionStatus: (sourceId?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.INGESTION_STATUS, sourceId),
+  ingestionFailedFiles: (sourceId?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.INGESTION_FAILED_FILES, sourceId),
   ingestionRetry: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.INGESTION_RETRY, sourceId),
   onIngestionProgress: (cb: (event: IngestionProgressEvent) => void) => {
     const handler = (_: Electron.IpcRendererEvent, event: IngestionProgressEvent) => cb(event)

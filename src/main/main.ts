@@ -286,6 +286,10 @@ ipcMain.handle(IPC_CHANNELS.INGESTION_STATUS, (_event, sourceId?: string) => {
   return ingestionQueue.getStatus(sourceId)
 })
 
+ipcMain.handle(IPC_CHANNELS.INGESTION_FAILED_FILES, (_event, sourceId?: string) => {
+  return ingestionQueue.getFailedFiles(sourceId)
+})
+
 ipcMain.handle(IPC_CHANNELS.INGESTION_RETRY, (_event, sourceId?: string) => {
   ingestionQueue.retry(sourceId)
 })

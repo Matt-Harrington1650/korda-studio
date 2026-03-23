@@ -163,4 +163,28 @@ describe('IngestionQueue', () => {
     expect(status.totalChunks).toBe(1)
     expect(status.avgChunksPerFile).toBe(1)
   })
+
+  it('getFailedFiles returns failed filenames and errors for a source', () => {
+    db.prepare(
+      `INSERT INTO files (path, name, source_id, pipeline_state, pipeline_error, pipeline_updated_at)
+       VALUES (?, ?, ?, 'failed', ?, ?)`,
+    ).run('/a/spec.pdf', 'spec.pdf', 'src1', 'Parse error', 1_700_000_000_000)
+    db.prepare(
+      `INSERT INTO files (path, name, source_id, pipeline_state, pipeline_error, pipeline_updated_at)
+       VALUES (?, ?, ?, 'failed', ?, ?)`,
+    ).run('/b/other.pdf', 'other.pdf', 'src2', 'Permission denied', 1_700_000_000_100)
+
+    const failedFiles = queue.getFailedFiles('src1')
+
+    expect(failedFiles).toEqual([
+      {
+        fileId: 1,
+        path: '/a/spec.pdf',
+        name: 'spec.pdf',
+        sourceId: 'src1',
+        error: 'Parse error',
+        updatedAt: 1_700_000_000_000,
+      },
+    ])
+  })
 })

@@ -2,7 +2,11 @@ import type Database from 'better-sqlite3'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { fileURLToPath } from 'node:url'
-import type { IngestionProgressEvent, IngestionStatus } from '../shared/ipc-types'
+import type {
+  FailedIngestionFile,
+  IngestionProgressEvent,
+  IngestionStatus,
+} from '../shared/ipc-types'
 
 const CURRENT_DIR =
   typeof __dirname === 'string' ? __dirname : path.dirname(fileURLToPath(import.meta.url))
@@ -172,6 +176,36 @@ export class IngestionQueue {
     }
   }
 
+  getFailedFiles(sourceId?: string): FailedIngestionFile[] {
+    const statement = sourceId
+      ? this.db.prepare(
+          `SELECT
+             id AS fileId,
+             path,
+             name,
+             source_id AS sourceId,
+             pipeline_error AS error,
+             pipeline_updated_at AS updatedAt
+           FROM files
+           WHERE pipeline_state = 'failed' AND source_id = ?
+           ORDER BY pipeline_updated_at DESC, id DESC`,
+        )
+      : this.db.prepare(
+          `SELECT
+             id AS fileId,
+             path,
+             name,
+             source_id AS sourceId,
+             pipeline_error AS error,
+             pipeline_updated_at AS updatedAt
+           FROM files
+           WHERE pipeline_state = 'failed'
+           ORDER BY pipeline_updated_at DESC, id DESC`,
+        )
+
+    return (sourceId ? statement.all(sourceId) : statement.all()) as FailedIngestionFile[]
+  }
+
   stop(): void {
     if (this.drainTimer) {
       clearInterval(this.drainTimer)
@@ -248,6 +282,10 @@ export const ingestionQueue = {
   getStatus(sourceId?: string): IngestionStatus {
     if (!queue) throw new Error('ingestionQueue not initialized')
     return queue.getStatus(sourceId)
+  },
+  getFailedFiles(sourceId?: string): FailedIngestionFile[] {
+    if (!queue) throw new Error('ingestionQueue not initialized')
+    return queue.getFailedFiles(sourceId)
   },
   stop(): void {
     queue?.stop()
