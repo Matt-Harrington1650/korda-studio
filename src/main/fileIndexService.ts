@@ -70,7 +70,10 @@ const SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_files_project  ON files(project);
   CREATE INDEX IF NOT EXISTS idx_files_ext      ON files(ext);
   CREATE INDEX IF NOT EXISTS idx_files_doc_type ON files(doc_type);
-  CREATE INDEX IF NOT EXISTS idx_files_source   ON files(source_id);
+  -- idx_files_source is created in runMigrations() after the source_id column
+  -- migration runs. It cannot live here: old databases have the files table
+  -- without source_id, so CREATE TABLE IF NOT EXISTS is a no-op and this
+  -- index creation fails before runMigrations() ever gets to add the column.
 
   CREATE TABLE IF NOT EXISTS projects (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,8 +109,10 @@ function runMigrations(): void {
 
   if (!hasSourceIdFiles) {
     db.exec(`ALTER TABLE files ADD COLUMN source_id TEXT NOT NULL DEFAULT 'default'`)
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_files_source ON files(source_id)`)
   }
+  // Always run — safe because IF NOT EXISTS. Must come after the ALTER TABLE
+  // above so source_id is guaranteed to exist on old databases.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_files_source ON files(source_id)`)
 
   const hasSourceIdProjects =
     (
