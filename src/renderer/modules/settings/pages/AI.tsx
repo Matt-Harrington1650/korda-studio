@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { usePreferencesStore } from '@shared/state/preferencesStore'
 import { CHAT_MODEL_OPTIONS } from '../../chat/chatModels'
-import { DEFAULT_AI_CONFIG, DEFAULT_FIRM_CONTEXT, type AIConfig } from '../../../../shared/ai-config'
+import {
+  DEFAULT_AI_CONFIG,
+  DEFAULT_FIRM_CONTEXT,
+  type AIConfig,
+} from '../../../../shared/ai-config'
 import { STORE_KEYS } from '../../../../shared/electron-store-keys'
 
 type ApiKeySource = 'env' | 'store' | 'none'
@@ -304,6 +308,90 @@ export function Component() {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="space-y-2">
+            <label htmlFor="voyage-api-key" className="text-sm text-text-primary">
+              Voyage AI API Key
+            </label>
+            <input
+              id="voyage-api-key"
+              type="password"
+              value={aiConfig.voyageApiKey ?? ''}
+              onChange={(event) => {
+                setAiConfig((current) => ({
+                  ...current,
+                  voyageApiKey: event.target.value,
+                }))
+                setAiFeedback(null)
+              }}
+              className="w-full rounded border border-border bg-surface-base px-3 py-2 text-sm text-text-primary outline-none focus:border-accent"
+            />
+            {aiConfig.voyageApiKey?.trim() ? (
+              <p className="text-sm text-green-400">Semantic search enabled (voyage-3)</p>
+            ) : (
+              <p className="text-sm text-text-secondary">
+                Add a Voyage key to enable semantic retrieval in a later phase.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="cohere-api-key" className="text-sm text-text-primary">
+              Cohere API Key
+            </label>
+            <input
+              id="cohere-api-key"
+              type="password"
+              value={aiConfig.cohereApiKey ?? ''}
+              onChange={(event) => {
+                setAiConfig((current) => ({
+                  ...current,
+                  cohereApiKey: event.target.value,
+                }))
+                setAiFeedback(null)
+              }}
+              className="w-full rounded border border-border bg-surface-base px-3 py-2 text-sm text-text-primary outline-none focus:border-accent"
+            />
+            {aiConfig.cohereApiKey?.trim() ? (
+              <p className="text-sm text-green-400">Reranking enabled (rerank-v3.5)</p>
+            ) : (
+              <p className="text-sm text-text-secondary">
+                Add a Cohere key to unlock reranking in a later phase.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-border bg-surface-base/60 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <label htmlFor="contextual-enrichment" className="text-sm text-text-primary">
+                Contextual Retrieval
+              </label>
+              <p className="text-sm text-text-secondary">
+                Uses Claude to generate a context sentence for each chunk during ingestion.
+              </p>
+            </div>
+            <input
+              id="contextual-enrichment"
+              type="checkbox"
+              checked={Boolean(aiConfig.contextualEnrichment)}
+              onChange={(event) => {
+                setAiConfig((current) => ({
+                  ...current,
+                  contextualEnrichment: event.target.checked,
+                }))
+                setAiFeedback(null)
+              }}
+              className="mt-1 h-4 w-4 rounded border-border bg-surface-base text-accent focus:ring-accent"
+            />
+          </div>
+          <p className="text-sm text-text-secondary">
+            Estimated cost: ~$0.04 per 1,000 chunks (Haiku) / ~$0.40 (Sonnet).
+          </p>
+          <p className="text-sm text-amber-200">Requires re-indexing all files after enabling.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">

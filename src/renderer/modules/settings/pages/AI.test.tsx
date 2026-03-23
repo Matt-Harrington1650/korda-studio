@@ -20,6 +20,9 @@ describe('AI settings page', () => {
           anthropicApiKey: 'stored-key',
           defaultModel: 'claude-3-5-haiku-20241022',
           firmContext: 'Stored firm context',
+          voyageApiKey: 'voyage-stored',
+          cohereApiKey: 'cohere-stored',
+          contextualEnrichment: true,
         }
       }
       return null
@@ -57,14 +60,18 @@ describe('AI settings page', () => {
   it('enables the API key input when the key comes from stored settings', async () => {
     render(<Component />)
 
-    await waitFor(() => expect(screen.getByLabelText(/anthropic api key/i)).toHaveValue('stored-key'))
+    await waitFor(() =>
+      expect(screen.getByLabelText(/anthropic api key/i)).toHaveValue('stored-key'),
+    )
     expect(screen.getByLabelText(/anthropic api key/i)).not.toBeDisabled()
   })
 
   it('saves the API key and default model to the ai store entry', async () => {
     render(<Component />)
 
-    await waitFor(() => expect(screen.getByLabelText(/anthropic api key/i)).toHaveValue('stored-key'))
+    await waitFor(() =>
+      expect(screen.getByLabelText(/anthropic api key/i)).toHaveValue('stored-key'),
+    )
     fireEvent.change(screen.getByLabelText(/anthropic api key/i), {
       target: { value: 'updated-key' },
     })
@@ -85,6 +92,41 @@ describe('AI settings page', () => {
       ),
     )
     expect(await screen.findByText(/ai settings saved/i)).toBeInTheDocument()
+  })
+
+  it('loads and saves retrieval provider settings', async () => {
+    render(<Component />)
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/voyage ai api key/i)).toHaveValue('voyage-stored'),
+    )
+    expect(screen.getByLabelText(/cohere api key/i)).toHaveValue('cohere-stored')
+    expect(screen.getByRole('checkbox', { name: /contextual retrieval/i })).toBeChecked()
+    expect(screen.getByText(/semantic search enabled/i)).toBeInTheDocument()
+    expect(screen.getByText(/reranking enabled/i)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(/voyage ai api key/i), {
+      target: { value: 'voyage-updated' },
+    })
+    fireEvent.change(screen.getByLabelText(/cohere api key/i), {
+      target: { value: 'cohere-updated' },
+    })
+    fireEvent.click(screen.getByRole('checkbox', { name: /contextual retrieval/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /save ai settings/i }))
+    })
+
+    await waitFor(() =>
+      expect(mockStoreSet).toHaveBeenCalledWith(
+        STORE_KEYS.AI,
+        expect.objectContaining({
+          voyageApiKey: 'voyage-updated',
+          cohereApiKey: 'cohere-updated',
+          contextualEnrichment: false,
+        }),
+      ),
+    )
+    expect(screen.getByText(/requires re-indexing all files/i)).toBeInTheDocument()
   })
 
   it('tests the Anthropic connection and shows success feedback', async () => {
@@ -118,12 +160,9 @@ describe('AI settings page', () => {
     fireEvent.change(screen.getByLabelText(/disciplines/i), {
       target: { value: 'Civil, Structural, Mechanical' },
     })
-    fireEvent.change(
-      screen.getByLabelText(/engineering conventions & firm context/i),
-      {
-        target: { value: 'Custom engineering guidance' },
-      },
-    )
+    fireEvent.change(screen.getByLabelText(/engineering conventions & firm context/i), {
+      target: { value: 'Custom engineering guidance' },
+    })
     fireEvent.click(screen.getByRole('button', { name: /save firm context/i }))
 
     await waitFor(() =>
