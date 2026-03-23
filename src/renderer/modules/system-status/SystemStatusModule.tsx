@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
-import type { SourceStatus } from '../../../shared/ipc-types'
+import type { IngestionStatus, SourceStatus } from '../../../shared/ipc-types'
+import { DEFAULT_AI_CONFIG, type AIConfig } from '../../../shared/ai-config'
+import { STORE_KEYS } from '../../../shared/electron-store-keys'
 import { humanizeAge } from '../../shared/utils/humanizeAge'
 
 type ServiceStatus = 'connected' | 'unreachable' | 'not-configured' | 'indexing'
@@ -23,7 +25,7 @@ const statusLabels: Record<ServiceStatus, string> = {
   connected: 'Connected',
   unreachable: 'Unreachable',
   'not-configured': 'Not Configured',
-  indexing: 'Indexing…',
+  indexing: 'Indexing...',
 }
 
 function sourceStatusesToServiceStatus(statuses: SourceStatus[]): {
@@ -33,92 +35,145 @@ function sourceStatusesToServiceStatus(statuses: SourceStatus[]): {
   if (statuses.length === 0) {
     return { status: 'not-configured', detail: '' }
   }
-  const totalFiles = statuses.reduce((n, s) => n + s.fileCount, 0)
-  const hasCrawling = statuses.some((s) => s.status === 'crawling')
-  const hasError = statuses.some((s) => s.status === 'error')
+
+  const totalFiles = statuses.reduce((count, status) => count + status.fileCount, 0)
+  const hasCrawling = statuses.some((status) => status.status === 'crawling')
+  const hasError = statuses.some((status) => status.status === 'error')
   const allNotConfigured = statuses.every(
-    (s) => s.status === 'not-configured' || s.status === 'disabled',
+    (status) => status.status === 'not-configured' || status.status === 'disabled',
   )
+
   if (hasCrawling) {
-    return { status: 'indexing', detail: `${totalFiles.toLocaleString()} files…` }
+    return { status: 'indexing', detail: `${totalFiles.toLocaleString()} files...` }
   }
+
   if (hasError) {
-    const errored = statuses.find((s) => s.status === 'error')
+    const errored = statuses.find((status) => status.status === 'error')
     return { status: 'unreachable', detail: errored?.crawlError ?? '' }
   }
+
   if (allNotConfigured) {
     return { status: 'not-configured', detail: '' }
   }
+
   return { status: 'connected', detail: `${totalFiles.toLocaleString()} files indexed` }
 }
 
-// Skeleton row for loading state — defined at module scope to keep a stable
-// component identity across renders (avoids react/no-unstable-nested-components).
+function parseAIConfig(raw: AIConfig | string | null): AIConfig {
+  if (!raw) {
+    return { ...DEFAULT_AI_CONFIG }
+  }
+
+  if (typeof raw === 'string') {
+    try {
+      return {
+        ...DEFAULT_AI_CONFIG,
+        ...(JSON.parse(raw) as Partial<AIConfig>),
+      }
+    } catch {
+      return { ...DEFAULT_AI_CONFIG }
+    }
+  }
+
+  return {
+    ...DEFAULT_AI_CONFIG,
+    ...raw,
+  }
+}
+
 function SkeletonRow({ isLast }: { isLast: boolean }) {
   return (
     <tr className={isLast ? '' : 'border-b border-border'}>
       <td className="px-4 py-3">
-        <div className="animate-pulse bg-surface-raised h-3 rounded w-20" />
+        <div className="h-3 w-20 animate-pulse rounded bg-surface-raised" />
       </td>
       <td className="px-4 py-3">
-        <div className="animate-pulse bg-surface-raised h-3 rounded w-16" />
+        <div className="h-3 w-16 animate-pulse rounded bg-surface-raised" />
       </td>
       <td className="px-4 py-3">
-        <div className="animate-pulse bg-surface-raised h-3 rounded w-24" />
+        <div className="h-3 w-24 animate-pulse rounded bg-surface-raised" />
       </td>
       <td className="px-4 py-3">
-        <div className="animate-pulse bg-surface-raised h-3 rounded w-14" />
+        <div className="h-3 w-14 animate-pulse rounded bg-surface-raised" />
       </td>
     </tr>
   )
 }
 
+interface KnowledgeRowProps {
+  label: string
+  value: string
+  action?: React.ReactNode
+}
+
+function KnowledgeRow({ label, value, action }: KnowledgeRowProps) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-border/60 py-2 last:border-b-0">
+      <span className="text-sm text-text-secondary">{label}</span>
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-text-primary">{value}</span>
+        {action}
+      </div>
+    </div>
+  )
+}
+
 export default function SystemStatusModule() {
   const [isLoading, setIsLoading] = useState(true)
-  const [tick, setTick] = useState(0) // increments every 30s to re-render humanized timestamps
+  const [tick, setTick] = useState(0)
   const [networkStatus, setNetworkStatus] = useState<ServiceStatus>(
     navigator.onLine ? 'connected' : 'unreachable',
   )
   const [fileServerStatus, setFileServerStatus] = useState<ServiceStatus>('not-configured')
   const [fileServerDetail, setFileServerDetail] = useState('')
+  const [knowledgeStatus, setKnowledgeStatus] = useState<IngestionStatus | null>(null)
+  const [aiConfig, setAiConfig] = useState<AIConfig>({ ...DEFAULT_AI_CONFIG })
   const [lastCheckedMs, setLastCheckedMs] = useState(Date.now())
 
-  const refreshFileServer = useCallback(async () => {
+  const refresh = useCallback(async () => {
+    setNetworkStatus(navigator.onLine ? 'connected' : 'unreachable')
+
     try {
-      const s = await window.kordaAPI.fileIndexStatus()
-      const { status, detail } = sourceStatusesToServiceStatus(s)
+      const [sourceStatuses, nextKnowledgeStatus, storedAI] = await Promise.all([
+        window.kordaAPI.fileIndexStatus(),
+        window.kordaAPI.ingestionStatus(),
+        window.kordaAPI.storeGet<AIConfig | string>(STORE_KEYS.AI),
+      ])
+
+      const { status, detail } = sourceStatusesToServiceStatus(sourceStatuses)
       setFileServerStatus(status)
       setFileServerDetail(detail)
+      setKnowledgeStatus(nextKnowledgeStatus)
+      setAiConfig(parseAIConfig(storedAI))
     } catch {
       setFileServerStatus('unreachable')
       setFileServerDetail('')
+      setKnowledgeStatus(null)
+      setAiConfig({ ...DEFAULT_AI_CONFIG })
     }
+
     setLastCheckedMs(Date.now())
     setIsLoading(false)
   }, [])
 
-  const refresh = useCallback(() => {
-    setNetworkStatus(navigator.onLine ? 'connected' : 'unreachable')
-    refreshFileServer()
-  }, [refreshFileServer])
-
   useEffect(() => {
-    refreshFileServer()
+    void refresh()
+
     const handleOnline = () => setNetworkStatus('connected')
     const handleOffline = () => setNetworkStatus('unreachable')
+
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [refreshFileServer])
+  }, [refresh])
 
-  // Tick every 30s to re-render the humanized "last checked" timestamp
-  // Does NOT call fileIndexStatus() — only forces a re-render
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30_000)
-    return () => clearInterval(id)
+    const interval = setInterval(() => setTick((current) => current + 1), 30_000)
+    return () => clearInterval(interval)
   }, [])
 
   const services: Service[] = [
@@ -128,34 +183,39 @@ export default function SystemStatusModule() {
     { name: 'Backend API', status: 'not-configured', detail: '', lastCheckedMs },
   ]
 
+  const searchMode = aiConfig.voyageApiKey?.trim() ? 'Semantic (voyage-3)' : 'Keyword'
+  const contextualEnrichment = aiConfig.contextualEnrichment ? 'ON' : 'OFF'
+  const reranking = aiConfig.cohereApiKey?.trim() ? 'ON' : 'OFF'
+
   return (
-    <div className="p-8 max-w-3xl mx-auto space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-text-primary">System Status</h1>
         <button
-          onClick={refresh}
+          onClick={() => void refresh()}
           aria-label="Refresh status"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-text-secondary border border-border rounded hover:bg-white/5 transition-colors"
+          className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 text-sm
+                     text-text-secondary transition-colors hover:bg-white/5"
         >
           <RefreshCw size={14} />
           Refresh
         </button>
       </div>
 
-      <div className="border border-border rounded-lg overflow-hidden">
+      <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full">
           <thead>
             <tr className="border-b border-border bg-surface-raised">
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-widest text-text-secondary">
                 Service
               </th>
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-widest text-text-secondary">
                 Status
               </th>
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-widest text-text-secondary">
                 Detail
               </th>
-              <th className="text-left px-4 py-2 text-xs font-medium text-text-secondary uppercase tracking-widest">
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-widest text-text-secondary">
                 Last Checked
               </th>
             </tr>
@@ -166,19 +226,19 @@ export default function SystemStatusModule() {
                 <SkeletonRow isLast={false} />
                 <SkeletonRow isLast={false} />
                 <SkeletonRow isLast={false} />
-                <SkeletonRow isLast={true} />
+                <SkeletonRow isLast />
               </>
             ) : (
-              services.map((service, i) => (
+              services.map((service, index) => (
                 <tr
                   key={service.name}
-                  className={i < services.length - 1 ? 'border-b border-border' : ''}
+                  className={index < services.length - 1 ? 'border-b border-border' : ''}
                 >
                   <td className="px-4 py-3 text-sm text-text-primary">{service.name}</td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5 text-xs">
                       <span
-                        className={`w-1.5 h-1.5 rounded-full ${statusColors[service.status].split(' ')[0]}`}
+                        className={`h-1.5 w-1.5 rounded-full ${statusColors[service.status].split(' ')[0]}`}
                       />
                       <span
                         className={statusColors[service.status].split(' ')[1]}
@@ -191,8 +251,7 @@ export default function SystemStatusModule() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-text-secondary">{service.detail}</td>
-                  <td className="px-4 py-3 text-[11px] text-text-secondary font-mono">
-                    {/* tick is read here to trigger re-render every 30s */}
+                  <td className="px-4 py-3 font-mono text-[11px] text-text-secondary">
                     {tick >= 0 && humanizeAge(Date.now() - service.lastCheckedMs)}
                   </td>
                 </tr>
@@ -201,6 +260,45 @@ export default function SystemStatusModule() {
           </tbody>
         </table>
       </div>
+
+      <section className="rounded-lg border border-border bg-surface-raised/40 p-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium uppercase tracking-widest text-text-secondary">
+            Knowledge Base
+          </h2>
+          {knowledgeStatus && knowledgeStatus.failed > 0 && (
+            <a href="/settings/connections" className="text-xs underline hover:text-text-primary">
+              View Failed
+            </a>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <KnowledgeRow
+            label="Files indexed"
+            value={knowledgeStatus ? knowledgeStatus.indexed.toLocaleString() : '--'}
+          />
+          <KnowledgeRow
+            label="Chunks indexed"
+            value={knowledgeStatus ? knowledgeStatus.totalChunks.toLocaleString() : '--'}
+          />
+          <KnowledgeRow
+            label="Avg chunks/file"
+            value={knowledgeStatus ? knowledgeStatus.avgChunksPerFile.toLocaleString() : '--'}
+          />
+          <KnowledgeRow
+            label="Files failed"
+            value={knowledgeStatus ? knowledgeStatus.failed.toLocaleString() : '--'}
+          />
+          <KnowledgeRow
+            label="Files skipped"
+            value={knowledgeStatus ? knowledgeStatus.skipped.toLocaleString() : '--'}
+          />
+          <KnowledgeRow label="Search mode" value={searchMode} />
+          <KnowledgeRow label="Contextual enrichment" value={contextualEnrichment} />
+          <KnowledgeRow label="Reranking" value={reranking} />
+        </div>
+      </section>
 
       <p className="text-[11px] text-text-secondary opacity-60">
         Additional service monitoring available in future updates

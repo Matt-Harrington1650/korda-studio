@@ -1,8 +1,11 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { STORE_KEYS } from '../../../shared/electron-store-keys'
 import SystemStatusModule from './SystemStatusModule'
 
 const mockFileIndexStatus = vi.fn()
+const mockIngestionStatus = vi.fn()
+const mockStoreGet = vi.fn()
 
 function makeSourceStatuses(status: string, fileCount = 5000, crawlError: string | null = null) {
   return [
@@ -23,8 +26,33 @@ function makeSourceStatuses(status: string, fileCount = 5000, crawlError: string
 beforeEach(() => {
   vi.clearAllMocks()
   mockFileIndexStatus.mockResolvedValue(makeSourceStatuses('idle'))
+  mockIngestionStatus.mockResolvedValue({
+    new: 0,
+    queued: 0,
+    extracting: 0,
+    chunking: 0,
+    contextualizing: 0,
+    indexed: 1201,
+    failed: 3,
+    skipped: 47,
+    total: 1251,
+    totalChunks: 24819,
+    avgChunksPerFile: 20,
+  })
+  mockStoreGet.mockImplementation(async (key: string) => {
+    if (key === STORE_KEYS.AI) {
+      return {
+        voyageApiKey: 'voyage-key',
+        cohereApiKey: 'cohere-key',
+        contextualEnrichment: true,
+      }
+    }
+    return null
+  })
   vi.stubGlobal('kordaAPI', {
     fileIndexStatus: mockFileIndexStatus,
+    ingestionStatus: mockIngestionStatus,
+    storeGet: mockStoreGet,
   })
 })
 
@@ -95,5 +123,15 @@ describe('SystemStatusModule', () => {
       expect(document.querySelector('.animate-pulse')).toBeFalsy()
       expect(screen.getByText('File Server')).toBeInTheDocument()
     })
+  })
+
+  it('shows Knowledge Base metrics and retrieval mode flags', async () => {
+    render(<SystemStatusModule />)
+
+    expect(await screen.findByText('Knowledge Base')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('24,819')).toBeInTheDocument())
+    expect(screen.getByText('Semantic (voyage-3)')).toBeInTheDocument()
+    expect(screen.getAllByText('ON').length).toBeGreaterThan(0)
+    expect(screen.getByText('View Failed')).toBeInTheDocument()
   })
 })
