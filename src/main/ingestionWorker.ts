@@ -65,6 +65,7 @@ function setState(
   extra?: {
     error?: string
     pageCount?: number | null
+    chunkCount?: number
   },
 ) {
   db.prepare(
@@ -76,7 +77,10 @@ function setState(
      WHERE id = ?`,
   ).run(state, extra?.error ?? null, extra?.pageCount ?? null, Date.now(), fileId)
 
-  emitProgress(fileId, state, extra?.error ? { error: extra.error } : undefined)
+  emitProgress(fileId, state, {
+    ...(extra?.error ? { error: extra.error } : {}),
+    ...(extra?.chunkCount != null ? { chunkCount: extra.chunkCount } : {}),
+  })
 }
 
 function replaceChunks(fileId: number, chunks: ChunkRecord[]) {
@@ -170,12 +174,10 @@ async function processJob(message: WorkerMessage) {
     }
 
     replaceChunks(fileId, chunks)
-    setState(fileId, 'indexed', { pageCount })
-    emitProgress(fileId, 'indexed', { chunkCount: chunks.length })
+    setState(fileId, 'indexed', { pageCount, chunkCount: chunks.length })
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error)
     setState(fileId, 'failed', { error: messageText })
-    emitProgress(fileId, 'failed', { error: messageText })
   } finally {
     port.postMessage({ type: 'ready' })
   }

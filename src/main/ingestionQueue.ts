@@ -53,6 +53,18 @@ export class IngestionQueue {
   ) {}
 
   init(): void {
+    // On startup, reset any files stuck in mid-flight states from a previous crash.
+    // 'extracting', 'chunking', 'contextualizing' cannot be resumed — restart them.
+    this.db
+      .prepare(
+        `UPDATE files
+         SET pipeline_state = 'new',
+             pipeline_error = NULL,
+             pipeline_updated_at = ?
+         WHERE pipeline_state IN ('extracting', 'chunking', 'contextualizing')`,
+      )
+      .run(Date.now())
+
     for (let index = 0; index < this.concurrency; index += 1) {
       const worker = new Worker(WORKER_ENTRY, {
         workerData: { dbPath: this.dbPath },

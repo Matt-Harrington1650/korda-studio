@@ -360,11 +360,13 @@ app.whenReady().then(async () => {
   try {
     fileIndexService.init(fileIndexDbPath, getSources, mainWindow)
     const fileIndexDb = fileIndexService.getDb()
+    // retrievalService must init before ingestionQueue — workers start immediately
+    // on ingestionQueue.init() and search IPC calls can arrive before retrieval is ready
+    retrievalService.init(fileIndexDb)
     ingestionQueue.init(fileIndexDb, fileIndexDbPath, (event) => {
       mainWindow?.webContents.send(IPC_CHANNELS.INGESTION_PROGRESS, event)
     })
-    ingestionQueue.drainNew()
-    retrievalService.init(fileIndexDb)
+    // drainNew() is called internally by ingestionQueue.init() — no duplicate call needed
     fileIndexService.crawlIfStale()
   } catch (err) {
     console.error('[KORDA] fileIndexService.init FAILED:', err)
