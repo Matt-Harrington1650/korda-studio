@@ -43,6 +43,24 @@ function parseAIConfig(raw: AIConfig | string | null): AIConfig {
   }
 }
 
+function ProviderPriorityHint({
+  voyageKey,
+  cohereKey,
+}: {
+  voyageKey?: string
+  cohereKey?: string
+}) {
+  const hasVoyage = Boolean(voyageKey?.trim())
+  const hasCohere = Boolean(cohereKey?.trim())
+
+  let message = 'No embedding provider - keyword search only'
+  if (hasVoyage && hasCohere) message = 'Voyage (embeddings) + Cohere (rerank)'
+  else if (hasVoyage) message = 'Voyage (embeddings)'
+  else if (hasCohere) message = 'Cohere (embeddings + rerank)'
+
+  return <p className="mt-1 text-xs italic text-text-secondary">{message}</p>
+}
+
 export function Component() {
   const { firmName, disciplines, setFirmName, setDisciplines } = usePreferencesStore()
   const [firmNameDraft, setFirmNameDraft] = useState(firmName)
@@ -332,7 +350,7 @@ export function Component() {
               <p className="text-sm text-green-400">Semantic search enabled (voyage-3)</p>
             ) : (
               <p className="text-sm text-text-secondary">
-                Add a Voyage key to enable semantic retrieval in a later phase.
+                Add a Voyage key to enable semantic retrieval.
               </p>
             )}
           </div>
@@ -357,10 +375,59 @@ export function Component() {
             {aiConfig.cohereApiKey?.trim() ? (
               <p className="text-sm text-green-400">Reranking enabled (rerank-v3.5)</p>
             ) : (
-              <p className="text-sm text-text-secondary">
-                Add a Cohere key to unlock reranking in a later phase.
-              </p>
+              <p className="text-sm text-text-secondary">Add a Cohere key to unlock reranking.</p>
             )}
+            <ProviderPriorityHint
+              voyageKey={aiConfig.voyageApiKey}
+              cohereKey={aiConfig.cohereApiKey}
+            />
+            <div className="mt-2 flex items-center gap-3">
+              <input
+                id="use-reranking"
+                type="checkbox"
+                checked={aiConfig.useReranking ?? false}
+                disabled={!aiConfig.cohereApiKey?.trim()}
+                onChange={(event) => {
+                  setAiConfig((current) => ({
+                    ...current,
+                    useReranking: event.target.checked,
+                  }))
+                  setAiFeedback(null)
+                }}
+                className="h-4 w-4 rounded accent-accent disabled:opacity-40"
+              />
+              <label htmlFor="use-reranking" className="text-sm text-text-secondary">
+                Use Cohere reranking when available
+              </label>
+            </div>
+            <div className="mt-4">
+              <p className="mb-2 text-sm font-medium text-text-primary">Retrieval Mode</p>
+              {(
+                [
+                  ['auto', 'Auto (recommended - hybrid when ready, keyword otherwise)'],
+                  ['hybrid', 'Hybrid (BM25 + vector + RRF)'],
+                  ['keyword', 'Keyword only (FTS5/BM25)'],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="mb-1 flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="retrievalMode"
+                    value={value}
+                    checked={(aiConfig.retrievalMode ?? 'auto') === value}
+                    onChange={() => {
+                      setAiConfig((current) => ({
+                        ...current,
+                        retrievalMode: value,
+                      }))
+                      setAiFeedback(null)
+                    }}
+                    className="accent-accent"
+                  />
+                  <span className="text-sm text-text-secondary">{label}</span>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 

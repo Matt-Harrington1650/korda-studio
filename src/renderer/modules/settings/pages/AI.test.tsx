@@ -201,4 +201,55 @@ describe('AI settings page', () => {
       ),
     )
   })
+
+  describe('Knowledge Retrieval section', () => {
+    it('renders useReranking checkbox unchecked by default', async () => {
+      render(<Component />)
+
+      const checkbox = await screen.findByRole('checkbox', { name: /use cohere reranking/i })
+      expect(checkbox).not.toBeChecked()
+    })
+
+    it('reranking checkbox is disabled when no Cohere key', async () => {
+      mockStoreGet.mockImplementation(async (key: string) => {
+        if (key === STORE_KEYS.AI) {
+          return {
+            ...DEFAULT_AI_CONFIG,
+            anthropicApiKey: 'stored-key',
+          }
+        }
+        return null
+      })
+
+      render(<Component />)
+
+      const checkbox = await screen.findByRole('checkbox', { name: /use cohere reranking/i })
+      expect(checkbox).toBeDisabled()
+    })
+
+    it('auto retrieval mode is selected by default', async () => {
+      render(<Component />)
+
+      const autoRadio = await screen.findByRole('radio', {
+        name: /auto \(recommended - hybrid when ready, keyword otherwise\)/i,
+      })
+      expect(autoRadio).toBeChecked()
+    })
+
+    it('ProviderPriorityHint shows no embedding provider when no keys', async () => {
+      mockStoreGet.mockImplementation(async (key: string) => {
+        if (key === STORE_KEYS.AI) {
+          return {
+            ...DEFAULT_AI_CONFIG,
+            anthropicApiKey: 'stored-key',
+          }
+        }
+        return null
+      })
+
+      render(<Component />)
+
+      expect(await screen.findByText(/no embedding provider/i)).toBeInTheDocument()
+    })
+  })
 })
