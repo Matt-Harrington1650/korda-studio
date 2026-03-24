@@ -122,6 +122,7 @@ export function MessageBubble({
 
   return (
     <article
+      data-role={message.role}
       className={`group flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
       title={new Date(message.createdAt).toLocaleString()}
     >

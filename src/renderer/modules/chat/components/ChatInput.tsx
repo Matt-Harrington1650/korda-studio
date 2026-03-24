@@ -65,6 +65,7 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(functio
 
       <div className="rounded-xl border border-border bg-surface-base p-3 shadow-sm">
         <textarea
+          aria-label="Message input"
           ref={(node) => {
             localRef.current = node
             if (typeof forwardedRef === 'function') {
