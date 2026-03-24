@@ -353,8 +353,7 @@ Expected output:
 ✓ Written: .../PROJ-003/Riverfront_Plaza_Geotech_Report.pdf (XXXXX bytes)
 ```
 
-If `tsx` is unavailable, try `npx ts-node --esm scripts/generateRagFixture.ts` or install tsx:
-`npm install --save-dev tsx` then retry.
+`tsx` was installed in Task 1 Step 1 — if this fails, verify that step completed successfully.
 
 - [ ] **Step 3: Verify the PDF exists and is non-empty**
 
