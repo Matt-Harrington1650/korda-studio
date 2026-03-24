@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ScopeSelector } from './ScopeSelector'
 
 describe('ScopeSelector', () => {
@@ -37,7 +37,9 @@ describe('ScopeSelector', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /scope/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /scope/i }))
+    })
 
     expect(await screen.findByLabelText('Engineering Shares')).toBeInTheDocument()
     expect(screen.getByLabelText('Hospital Expansion')).toBeInTheDocument()
@@ -62,12 +64,33 @@ describe('ScopeSelector', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /scope/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /scope/i }))
+    })
     await waitFor(() => expect(screen.getByRole('button', { name: /clear scope/i })).toBeVisible())
 
     fireEvent.click(screen.getByRole('button', { name: /clear scope/i }))
 
     expect(onSourcesChange).toHaveBeenCalledWith([])
     expect(onProjectsChange).toHaveBeenCalledWith([])
+  })
+
+  it('renders a scrollable options region when opened', async () => {
+    render(
+      <ScopeSelector
+        selectedSourceIds={[]}
+        selectedProjects={[]}
+        onSourcesChange={vi.fn()}
+        onProjectsChange={vi.fn()}
+      />,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /scope/i }))
+    })
+
+    const optionsRegion = await screen.findByLabelText('Scope options')
+
+    expect(optionsRegion).toHaveClass('overflow-y-auto')
   })
 })

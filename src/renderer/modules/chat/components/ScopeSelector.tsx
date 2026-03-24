@@ -105,8 +105,11 @@ export function ScopeSelector({
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 z-20 mb-2 w-80 rounded-2xl border border-border bg-surface-overlay p-4 shadow-xl">
-          <div className="space-y-4">
+        <div className="absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(26rem,calc(100vh-8rem))] w-80 max-w-[calc(100vw-2rem)] flex-col rounded-2xl border border-border bg-surface-overlay p-4 shadow-xl">
+          <div
+            aria-label="Scope options"
+            className="flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1"
+          >
             <section>
               <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-text-secondary">
                 Sources
@@ -164,29 +167,29 @@ export function ScopeSelector({
                 )}
               </div>
             </section>
+          </div>
 
-            <div className="flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  onSourcesChange([])
-                  onProjectsChange([])
-                }}
-                className="rounded-lg border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary"
-              >
-                Clear scope
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsOpen(false)
-                  onApply?.()
-                }}
-                className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
-              >
-                Search these
-              </button>
-            </div>
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
+            <button
+              type="button"
+              onClick={() => {
+                onSourcesChange([])
+                onProjectsChange([])
+              }}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary"
+            >
+              Clear scope
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false)
+                onApply?.()
+              }}
+              className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
+            >
+              Search these
+            </button>
           </div>
         </div>
       )}
