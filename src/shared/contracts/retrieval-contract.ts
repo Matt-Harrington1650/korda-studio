@@ -9,7 +9,7 @@ export interface RetrievalParams {
   mode?: RetrievalMode
 }
 
-export type RetrievalMode = 'keyword' | 'vector' | 'hybrid'
+export type RetrievalMode = 'keyword' | 'vector' | 'hybrid' | 'auto'
 
 export interface RetrievalResult {
   chunk: ChunkRecord

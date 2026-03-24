@@ -2,6 +2,7 @@ import type { FileSource, SourceStatus } from './file-sources'
 import type { Citation, EvidenceStatus } from './contracts/citation-contract'
 import type { PipelineState } from './contracts/index-record'
 import type { ChunkRecord } from './contracts/chunk-record'
+import type { EmbeddingStats } from './contracts/embedding-provider-contract'
 import type { RetrievalParams, RetrievalResult } from './contracts/retrieval-contract'
 export type { FileSource, FileSourceType, SourceStatus } from './file-sources'
 export type { Citation, EvidenceStatus } from './contracts/citation-contract'
@@ -120,6 +121,14 @@ export interface GroundedDonePayload {
   finalText: string
 }
 
+export interface EmbeddingProgressPayload {
+  embedded: number
+  total: number
+  percent: number
+  isReady: boolean
+  hasProvider: boolean
+}
+
 export interface KordaAPI {
   getAppVersion: () => Promise<string>
   getWindowState: () => Promise<WindowState | null>
@@ -172,6 +181,8 @@ export interface KordaAPI {
   ingestionFailedFiles: (sourceId?: string) => Promise<FailedIngestionFile[]>
   ingestionRetry: (sourceId?: string) => Promise<void>
   onIngestionProgress: (cb: (event: IngestionProgressEvent) => void) => () => void
+  onEmbeddingProgress: (cb: (payload: EmbeddingProgressPayload) => void) => () => void
+  getEmbeddingStats: () => Promise<EmbeddingStats>
 }
 
 // Channel names as constants to prevent typos
@@ -218,4 +229,6 @@ export const IPC_CHANNELS = {
   INGESTION_FAILED_FILES: 'ingestion:failed-files',
   INGESTION_RETRY: 'ingestion:retry',
   INGESTION_PROGRESS: 'ingestion:progress',
+  EMBEDDING_PROGRESS: 'embedding:progress',
+  EMBEDDING_STATS: 'embedding:stats',
 } as const

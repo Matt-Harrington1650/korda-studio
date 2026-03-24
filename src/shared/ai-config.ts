@@ -6,6 +6,8 @@ export interface AIConfig {
   voyageApiKey?: string
   cohereApiKey?: string
   contextualEnrichment?: boolean
+  useReranking?: boolean
+  retrievalMode?: 'keyword' | 'vector' | 'hybrid' | 'auto'
 }
 
 export const DEFAULT_AI_MODEL = 'claude-sonnet-4-6'
@@ -30,4 +32,6 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   voyageApiKey: '',
   cohereApiKey: '',
   contextualEnrichment: false,
+  useReranking: false,
+  retrievalMode: 'auto',
 }
