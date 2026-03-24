@@ -17,8 +17,8 @@ Prove that the Phase 3C RAG stack works correctly end-to-end in a real Electron 
    the grounded chat response cites the correct file.
 3. **Hybrid mode** — `retrievalMode: 'auto'` retrieves semantically relevant chunks even when
    the query shares no keywords with the source text, proving the vector path is active.
-4. **Mode gate** — the semantic query deliberately _fails_ (no citation) under keyword mode,
-   confirming the vector path is doing real work and BM25 alone cannot satisfy it.
+4. **Mode gate** — the semantic query deliberately _fails_ (no citation or no key fact) under
+   keyword mode, confirming the vector path is doing real work and BM25 alone cannot satisfy it.
 5. **Reranking toggle** — enabling `useReranking` does not break retrieval; the same citation
    still appears.
 
@@ -90,34 +90,35 @@ ragPipeline.spec.ts
 │
 ├── beforeAll
 │   ├── launchApp()
+│   ├── Navigate to Knowledge module, select PROJ-003 scope (so grounded chat is active)
 │   ├── configureAISettings({ voyageApiKey, anthropicApiKey, retrievalMode: 'auto', useReranking: false })
-│   └── set file server root to __testdata__ root, click Save, await 'Indexing started'
+│   └── set file server root to __testdata__ root, click "Save", await 'Indexing started'
 │
 ├── describe: "Embedding Pipeline"   [@expensive]
 │   ├── test: indexing completes — PROJ-003 appears in file index within 15 s
-│   ├── test: embedding progress events fire — EMBEDDING_PROGRESS received at least once
 │   ├── test: all chunks reach isReady — waitForEmbeddingReady(page, 90_000)
-│   ├── test: hasProvider is true
-│   └── test: percent reaches 100
+│   ├── test: hasProvider is true (stats.hasProvider === true)
+│   └── test: percent reaches 100 (stats.percent === 100)
 │
 ├── describe: "Keyword Mode"   [@expensive]
 │   ├── beforeEach: configureAISettings({ retrievalMode: 'keyword' })
 │   ├── test: keyword query returns citation — "What is the SPT N-value in the fill layer?"
-│   │         → citation.filename contains 'Riverfront_Plaza'
-│   │         → responseText matches /3.*8|N.value.*fill|fill.*N.value/i
-│   └── test: semantic query finds nothing useful — "What load can the soil safely support?"
-│             → no citation OR citation.relevanceScore below threshold
-│             (proves vector path is needed — this test is expected to produce weak/no citation)
+│   │         → citation.fileName contains 'Riverfront_Plaza'
+│   │         → responseText matches /3.*8|N.?value.*fill|fill.*N.?value/i
+│   └── test: semantic query does not retrieve key fact — "What load can the soil safely support?"
+│             → citations absent OR responseText does not match /120\s*kPa/i
+│             (proves vector path is needed — BM25 alone cannot satisfy this query)
 │
 ├── describe: "Hybrid Mode"   [@expensive]
 │   ├── beforeEach: configureAISettings({ retrievalMode: 'auto' })
 │   ├── test: semantic query succeeds — "What load can the soil safely support?"
-│   │         → citation.filename contains 'Riverfront_Plaza'
+│   │         → citation.fileName contains 'Riverfront_Plaza'
 │   │         → responseText matches /120\s*kPa|bearing capacity.*120|120.*allowable/i
 │   ├── test: liquefaction query succeeds — "Is the site at risk during an earthquake?"
 │   │         → responseText matches /liquefaction|0\.18g|seismic/i
 │   └── test: synthesis query spans sections — "Summarise the foundation options and risks"
-│             → responseText contains both 'piles' (or '14 m') and '120'
+│             → responseText matches /piles?|14\s*m/i
+│             → responseText matches /120|bearing capacity/i
 │
 ├── describe: "Reranking Toggle"   [@expensive]
 │   ├── beforeEach: configureAISettings({ retrievalMode: 'auto', useReranking: true })
@@ -137,24 +138,41 @@ All helpers live in `e2e/fixtures/` alongside the existing `launchApp.ts` and `t
 
 ### 5.1 `configureAISettings(page, settings)`
 
-Navigates to Settings → AI page, fills the form fields, clicks Save, awaits the `✓ Saved`
-confirmation. Accepts partial settings — only provided fields are written, others are left as-is.
+**Navigation path:** `page.click('a[href="/settings"]')` → click the "AI" sub-nav link → fill
+fields → click "Save AI Settings" → await confirmation text `"AI settings saved."`.
+
+The success confirmation is a `<span>` with class containing `aiFeedback` that shows
+`"AI settings saved."` — **not** `"✓ Saved"` (that text only exists on the Connections page).
+
+Accepts partial settings — only provided fields are written, others are left as-is.
 
 ```typescript
 interface AITestSettings {
   voyageApiKey?: string
   anthropicApiKey?: string
-  retrievalMode?: 'keyword' | 'vector' | 'hybrid' | 'auto'
+  retrievalMode?: 'keyword' | 'hybrid' | 'auto'
   useReranking?: boolean
 }
 
 async function configureAISettings(page: Page, settings: AITestSettings): Promise<void>
 ```
 
+**Selectors:**
+
+| Field                               | Playwright selector                            |
+| ----------------------------------- | ---------------------------------------------- |
+| Voyage API key input                | `#voyage-api-key`                              |
+| Anthropic API key input             | `#anthropic-api-key`                           |
+| Retrieval mode radio (e.g. keyword) | `input[name="retrievalMode"][value="keyword"]` |
+| Use reranking checkbox              | `#use-reranking`                               |
+| Save button                         | `button:has-text("Save AI Settings")`          |
+| Success confirmation                | `text=AI settings saved.`                      |
+
 ### 5.2 `waitForEmbeddingReady(page, timeoutMs)`
 
 Polls `window.kordaAPI.getEmbeddingStats()` via `page.evaluate` every 2 seconds until
-`stats.isReady === true`. Throws a descriptive error on timeout:
+`stats.isReady === true`. The IPC method is exposed as `kordaAPI.getEmbeddingStats` in
+`preload.ts`. Throws a descriptive error on timeout:
 
 ```
 EmbeddingReadyTimeout: Embeddings not ready after 90 000 ms.
@@ -164,31 +182,48 @@ EmbeddingReadyTimeout: Embeddings not ready after 90 000 ms.
 
 ### 5.3 `sendChatMessage(page, text)` → `ChatResponse`
 
-Types `text` into the chat input, submits, waits for the streaming indicator to disappear
-(stream complete), then returns:
+**Prerequisite:** The chat module must be in grounded mode with a knowledge scope selected. The
+`beforeAll` sets this up by selecting the PROJ-003 scope via the `ScopeSelector` component
+before sending any messages.
+
+Types `text` into the chat input (`[aria-label="Message input"]` or the textarea in
+`ChatInput.tsx`), submits, calls `waitForStreamComplete(page)`, then calls
+`getCitationsFromLastMessage(page)`, and returns:
 
 ```typescript
 interface ChatResponse {
-  text: string // full assistant message text
-  citations: Citation[] // citation chips parsed from the DOM
+  text: string // full assistant message text content
+  citations: Citation[]
 }
 ```
 
 ### 5.4 `getCitationsFromLastMessage(page)` → `Citation[]`
 
-Reads citation chips rendered below the last assistant message bubble. Returns:
+`CitationPanel` renders **collapsed by default** (`defaultOpen = false`). This helper must
+first click the expand toggle — `[aria-label="Show sources"]` on the last assistant message
+bubble — before reading citation rows. If the toggle reads `[aria-label="Hide sources"]` the
+panel is already expanded.
+
+After expanding, reads each citation row to return:
 
 ```typescript
 interface Citation {
-  filename: string
+  fileName: string // matches citation.fileName in the actual Citation contract
   excerpt: string
 }
 ```
 
 ### 5.5 `waitForStreamComplete(page, timeoutMs)`
 
-Waits for the streaming spinner/indicator in the chat UI to disappear, indicating the assistant
-response has fully streamed. Default timeout: 30 000 ms.
+The streaming state is reflected in the chat input: while streaming, a Stop button
+(`[aria-label="Stop response"]`) is visible; when streaming ends, the Send button
+(`[aria-label="Send message"]`) reappears.
+
+```typescript
+await page.locator('[aria-label="Send message"]').waitFor({ state: 'visible', timeout: timeoutMs })
+```
+
+Default timeout: 30 000 ms.
 
 ---
 
@@ -209,7 +244,7 @@ expect(stats.embedded).toBe(stats.total)
 ```typescript
 const citations = await getCitationsFromLastMessage(page)
 expect(citations.length).toBeGreaterThan(0)
-expect(citations[0].filename).toContain('Riverfront_Plaza')
+expect(citations[0].fileName).toContain('Riverfront_Plaza')
 ```
 
 ### 6.3 Response content assertions (flexible regex)
@@ -234,57 +269,90 @@ expect(responseText).toMatch(/120|bearing capacity/i)
 ### 6.4 Mode-gate assertion (keyword mode fails semantic query)
 
 In keyword mode, the semantic query `"What load can the soil safely support?"` must produce
-evidence of weak or absent retrieval. Assert at least one of:
+evidence of weak or absent retrieval. The assertion is **always explicit** — it does not pass
+vacuously if no citations are returned:
 
 ```typescript
-const citations = await getCitationsFromLastMessage(page)
-const hasStrongCitation = citations.some((c) => c.filename.includes('Riverfront_Plaza'))
-// Either no citation at all, or the response doesn't contain the key fact
-if (hasStrongCitation) {
-  // If keyword mode somehow retrieves it, the fact must be absent — BM25 got lucky on tokens
-  // but the response will be vague or wrong
-  expect(responseText).not.toMatch(/120\s*kPa/i)
-}
+const { text: responseText, citations } = await sendChatMessage(
+  page,
+  'What load can the soil safely support?',
+)
+const hasStrongCitation = citations.some((c) => c.fileName.includes('Riverfront_Plaza'))
+const hasKeyFact = /120\s*kPa/i.test(responseText)
+
+// At least one of these must be true: no strong citation, or key fact absent from response
+expect(hasStrongCitation && hasKeyFact).toBe(false)
 ```
+
+This assertion fails if BM25 somehow retrieves the right chunk AND the AI happens to quote
+`120 kPa` — which would indicate the vector gate is not working as expected.
 
 ---
 
 ## 7. Package.json Changes
 
+Two changes needed:
+
+**1. Add `cross-env` to devDependencies** (required for Windows-compatible env var injection
+in npm scripts):
+
+```bash
+npm install --save-dev cross-env
+```
+
+**2. Add `test:e2e:full` script** (plus matching `pre`/`post` hooks so native modules are
+rebuilt, matching the pattern of the existing `test:e2e` hooks):
+
 ```json
 {
   "scripts": {
-    "test:e2e:full": "cross-env playwright test e2e/ragPipeline.spec.ts"
+    "pretest:e2e:full": "<same as pretest:e2e — electron-rebuild command>",
+    "test:e2e:full": "cross-env playwright test e2e/ragPipeline.spec.ts",
+    "posttest:e2e:full": "<same as posttest:e2e — npm rebuild better-sqlite3>"
   }
 }
 ```
 
-The normal `test:e2e` script remains unchanged and does not include `ragPipeline.spec.ts`.
+Copy the exact command strings from the existing `pretest:e2e` and `posttest:e2e` entries.
+The normal `test:e2e` script remains unchanged.
 
 ---
 
 ## 8. Fixture Generation
 
-The fixture PDF is committed as a binary to the repo. It is generated once by a build script:
+The fixture PDF is committed as a binary to the repo. It is generated **once** by a developer
+using a one-off build script — tests never re-generate it at runtime.
 
 **`scripts/generateRagFixture.ts`**
 
-Uses `pdf-lib` to create `Riverfront_Plaza_Geotech_Report.pdf` programmatically with the
-content from Section 3. The script is run once by a developer and the output committed — tests
-never re-generate it at runtime. This avoids `pdf-lib` as a test runtime dependency.
+Uses `pdf-lib` to create `Riverfront_Plaza_Geotech_Report.pdf` with the content from
+Section 3. Before running, install `pdf-lib` as a dev dependency:
+
+```bash
+npm install --save-dev pdf-lib
+```
+
+Run once:
+
+```bash
+npx ts-node scripts/generateRagFixture.ts
+```
+
+Then commit the generated PDF binary. `pdf-lib` remains in `devDependencies` (it is also
+useful for future fixture updates).
 
 ---
 
 ## 9. File Map
 
-| Action | Path                                                                                                        |
-| ------ | ----------------------------------------------------------------------------------------------------------- |
-| CREATE | `e2e/ragPipeline.spec.ts`                                                                                   |
-| CREATE | `e2e/fixtures/configureAISettings.ts`                                                                       |
-| CREATE | `e2e/fixtures/waitForEmbeddingReady.ts`                                                                     |
-| CREATE | `e2e/fixtures/sendChatMessage.ts`                                                                           |
-| CREATE | `e2e/fixtures/getCitationsFromLastMessage.ts`                                                               |
-| CREATE | `e2e/fixtures/waitForStreamComplete.ts`                                                                     |
-| CREATE | `scripts/generateRagFixture.ts`                                                                             |
-| CREATE | `src/main/__testdata__/projects/PROJ-003/Riverfront_Plaza_Geotech_Report.pdf` (binary, generated by script) |
-| MODIFY | `package.json` (add `test:e2e:full` script)                                                                 |
+| Action | Path                                                                                   |
+| ------ | -------------------------------------------------------------------------------------- |
+| CREATE | `e2e/ragPipeline.spec.ts`                                                              |
+| CREATE | `e2e/fixtures/configureAISettings.ts`                                                  |
+| CREATE | `e2e/fixtures/waitForEmbeddingReady.ts`                                                |
+| CREATE | `e2e/fixtures/sendChatMessage.ts`                                                      |
+| CREATE | `e2e/fixtures/getCitationsFromLastMessage.ts`                                          |
+| CREATE | `e2e/fixtures/waitForStreamComplete.ts`                                                |
+| CREATE | `scripts/generateRagFixture.ts`                                                        |
+| CREATE | `src/main/__testdata__/projects/PROJ-003/Riverfront_Plaza_Geotech_Report.pdf` (binary) |
+| MODIFY | `package.json` (add `cross-env` devDep, `test:e2e:full` + pre/post hooks)              |
