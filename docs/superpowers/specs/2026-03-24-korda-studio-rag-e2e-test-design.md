@@ -186,9 +186,13 @@ EmbeddingReadyTimeout: Embeddings not ready after 90 000 ms.
 `beforeAll` sets this up by selecting the PROJ-003 scope via the `ScopeSelector` component
 before sending any messages.
 
-Types `text` into the chat input (`[aria-label="Message input"]` or the textarea in
-`ChatInput.tsx`), submits, calls `waitForStreamComplete(page)`, then calls
-`getCitationsFromLastMessage(page)`, and returns:
+**Prerequisite code change:** `ChatInput.tsx` textarea currently has no `aria-label`. The
+implementation plan must add `aria-label="Message input"` to the `<textarea>` element in
+`ChatInput.tsx` before this helper can function. Once added, the selector is:
+`page.locator('[aria-label="Message input"]')`.
+
+Types `text` into `[aria-label="Message input"]`, submits, calls `waitForStreamComplete(page)`,
+then calls `getCitationsFromLastMessage(page)`, and returns:
 
 ```typescript
 interface ChatResponse {
@@ -345,14 +349,15 @@ useful for future fixture updates).
 
 ## 9. File Map
 
-| Action | Path                                                                                   |
-| ------ | -------------------------------------------------------------------------------------- |
-| CREATE | `e2e/ragPipeline.spec.ts`                                                              |
-| CREATE | `e2e/fixtures/configureAISettings.ts`                                                  |
-| CREATE | `e2e/fixtures/waitForEmbeddingReady.ts`                                                |
-| CREATE | `e2e/fixtures/sendChatMessage.ts`                                                      |
-| CREATE | `e2e/fixtures/getCitationsFromLastMessage.ts`                                          |
-| CREATE | `e2e/fixtures/waitForStreamComplete.ts`                                                |
-| CREATE | `scripts/generateRagFixture.ts`                                                        |
-| CREATE | `src/main/__testdata__/projects/PROJ-003/Riverfront_Plaza_Geotech_Report.pdf` (binary) |
-| MODIFY | `package.json` (add `cross-env` devDep, `test:e2e:full` + pre/post hooks)              |
+| Action | Path                                                                                                |
+| ------ | --------------------------------------------------------------------------------------------------- |
+| CREATE | `e2e/ragPipeline.spec.ts`                                                                           |
+| CREATE | `e2e/fixtures/configureAISettings.ts`                                                               |
+| CREATE | `e2e/fixtures/waitForEmbeddingReady.ts`                                                             |
+| CREATE | `e2e/fixtures/sendChatMessage.ts`                                                                   |
+| CREATE | `e2e/fixtures/getCitationsFromLastMessage.ts`                                                       |
+| CREATE | `e2e/fixtures/waitForStreamComplete.ts`                                                             |
+| CREATE | `scripts/generateRagFixture.ts`                                                                     |
+| CREATE | `src/main/__testdata__/projects/PROJ-003/Riverfront_Plaza_Geotech_Report.pdf` (binary)              |
+| MODIFY | `package.json` (add `cross-env` devDep, `test:e2e:full` + pre/post hooks)                           |
+| MODIFY | `src/renderer/modules/chat/components/ChatInput.tsx` (add `aria-label="Message input"` to textarea) |
