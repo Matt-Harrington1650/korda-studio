@@ -123,6 +123,46 @@ describe('preload knowledge and ingestion bridges', () => {
     )
   })
 
+  it('registers and unregisters onEmbeddingProgress listeners', () => {
+    const api = electronState.exposedApi as {
+      onEmbeddingProgress: (
+        cb: (payload: { embedded: number; total: number; percent: number }) => void,
+      ) => () => void
+    }
+    const callback = vi.fn()
+
+    const unsubscribe = api.onEmbeddingProgress(callback)
+
+    expect(electronState.ipcRenderer.on).toHaveBeenCalledWith(
+      IPC_CHANNELS.EMBEDDING_PROGRESS,
+      expect.any(Function),
+    )
+
+    const handler = vi.mocked(electronState.ipcRenderer.on).mock.calls[0][1] as (
+      event: unknown,
+      payload: { embedded: number; total: number; percent: number },
+    ) => void
+    handler({}, { embedded: 3, total: 9, percent: 33 })
+    expect(callback).toHaveBeenCalledWith({ embedded: 3, total: 9, percent: 33 })
+
+    unsubscribe()
+
+    expect(electronState.ipcRenderer.removeListener).toHaveBeenCalledWith(
+      IPC_CHANNELS.EMBEDDING_PROGRESS,
+      handler,
+    )
+  })
+
+  it('bridges getEmbeddingStats through ipcRenderer.invoke', () => {
+    const api = electronState.exposedApi as {
+      getEmbeddingStats: () => unknown
+    }
+
+    api.getEmbeddingStats()
+
+    expect(electronState.ipcRenderer.invoke).toHaveBeenCalledWith(IPC_CHANNELS.EMBEDDING_STATS)
+  })
+
   it('bridges chatSendGrounded through ipcRenderer.invoke', () => {
     const api = electronState.exposedApi as {
       chatSendGrounded: (params: {

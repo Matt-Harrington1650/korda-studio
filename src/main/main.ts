@@ -5,6 +5,8 @@ import { DEFAULT_AI_CONFIG, type AIConfig } from '../shared/ai-config'
 import type { RetrievalParams } from '../shared/contracts/retrieval-contract'
 import { chatService } from './chatService'
 import type { FileSource } from '../shared/file-sources'
+import { EmbeddingLoop } from './embeddingLoop'
+import { createProviders } from './embeddingProviderFactory'
 import { fileIndexService } from './fileIndexService'
 import { ingestionQueue } from './ingestionQueue'
 import { retrievalService } from './retrievalService'
@@ -14,6 +16,7 @@ declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string
 declare const MAIN_WINDOW_VITE_NAME: string
 
 let mainWindow: BrowserWindow | null = null
+let embeddingLoop: EmbeddingLoop | null = null
 
 interface StoreSchema {
   preferences: string
@@ -214,6 +217,9 @@ ipcMain.handle(IPC_CHANNELS.STORE_SET, (_event, key: string, value: unknown | nu
   } else {
     store.set(key as keyof StoreSchema, value as StoreSchema[keyof StoreSchema])
   }
+  if (key === 'ai') {
+    embeddingLoop?.init()
+  }
 })
 
 ipcMain.handle(IPC_CHANNELS.FILE_INDEX_SEARCH, (_event, params) => {
@@ -295,6 +301,18 @@ ipcMain.handle(IPC_CHANNELS.INGESTION_RETRY, (_event, sourceId?: string) => {
   ingestionQueue.retry(sourceId)
 })
 
+ipcMain.handle(IPC_CHANNELS.EMBEDDING_STATS, () => {
+  return (
+    embeddingLoop?.getStats() ?? {
+      embedded: 0,
+      total: 0,
+      percent: 0,
+      isReady: false,
+      hasProvider: Boolean(createProviders(getAIConfig()).embedder),
+    }
+  )
+})
+
 ipcMain.handle(IPC_CHANNELS.CHAT_SEND, (_event, params: SendParams) => {
   return chatService.send(params.conversationId, params.content, params.model)
 })
@@ -371,12 +389,17 @@ app.whenReady().then(async () => {
   try {
     fileIndexService.init(fileIndexDbPath, getSources, mainWindow)
     const fileIndexDb = fileIndexService.getDb()
+    const getProviders = () => createProviders(getAIConfig())
     // retrievalService must init before ingestionQueue — workers start immediately
     // on ingestionQueue.init() and search IPC calls can arrive before retrieval is ready
-    retrievalService.init(fileIndexDb)
+    retrievalService.init(fileIndexDb, getProviders)
     ingestionQueue.init(fileIndexDb, fileIndexDbPath, (event) => {
       mainWindow?.webContents.send(IPC_CHANNELS.INGESTION_PROGRESS, event)
     })
+    embeddingLoop = new EmbeddingLoop(fileIndexDb, getProviders, (payload) => {
+      mainWindow?.webContents.send(IPC_CHANNELS.EMBEDDING_PROGRESS, payload)
+    })
+    embeddingLoop.init()
     // drainNew() is called internally by ingestionQueue.init() — no duplicate call needed
     fileIndexService.crawlIfStale()
   } catch (err) {

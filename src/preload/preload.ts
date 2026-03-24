@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../shared/ipc-types'
 import type {
   Citation,
+  EmbeddingProgressPayload,
   GroundedDonePayload,
   GroundedSendParams,
   IngestionProgressEvent,
@@ -115,4 +116,10 @@ contextBridge.exposeInMainWorld('kordaAPI', {
     ipcRenderer.on(IPC_CHANNELS.INGESTION_PROGRESS, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.INGESTION_PROGRESS, handler)
   },
+  onEmbeddingProgress: (cb: (payload: EmbeddingProgressPayload) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: EmbeddingProgressPayload) => cb(payload)
+    ipcRenderer.on(IPC_CHANNELS.EMBEDDING_PROGRESS, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.EMBEDDING_PROGRESS, handler)
+  },
+  getEmbeddingStats: () => ipcRenderer.invoke(IPC_CHANNELS.EMBEDDING_STATS),
 })
