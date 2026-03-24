@@ -5,7 +5,7 @@ import type { AppHandle } from './fixtures/launchApp'
 import { TEST_DATA_ROOT } from './fixtures/testDataDir'
 import { configureAISettings } from './fixtures/configureAISettings'
 import { waitForEmbeddingReady } from './fixtures/waitForEmbeddingReady'
-import { sendChatMessage as _sendChatMessage } from './fixtures/sendChatMessage'
+import { sendChatMessage } from './fixtures/sendChatMessage'
 import { getCitationsFromLastMessage as _getCitationsFromLastMessage } from './fixtures/getCitationsFromLastMessage'
 import type { EmbeddingStats } from '../src/shared/contracts/embedding-provider-contract'
 
@@ -128,5 +128,71 @@ test.describe('Embedding Pipeline @expensive', () => {
     expect(stats.isReady).toBe(true)
     expect(stats.percent).toBe(100)
     expect(stats.embedded).toBe(stats.total)
+  })
+})
+
+// ─── Keyword Mode ─────────────────────────────────────────────────────────────
+test.describe('Keyword Mode @expensive', () => {
+  test.beforeEach(async () => {
+    await configureAISettings(handle.page, { retrievalMode: 'keyword' })
+    await handle.page.click('a[href="/chat"]')
+  })
+
+  test('keyword query returns citation with correct N-value fact', async () => {
+    const { page } = handle
+    const { text, citations } = await sendChatMessage(
+      page,
+      'What is the SPT N-value in the fill layer?',
+    )
+    expect(citations.length).toBeGreaterThan(0)
+    expect(citations[0].fileName).toContain('Riverfront_Plaza')
+    expect(text).toMatch(/3.*8|N.?value.*fill|fill.*N.?value/i)
+  })
+
+  test('semantic query does NOT return the 120 kPa bearing capacity fact (proves vector gap)', async () => {
+    const { page } = handle
+    const { text, citations } = await sendChatMessage(
+      page,
+      'What load can the soil safely support?',
+    )
+    const hasStrongCitation = citations.some((c) => c.fileName.includes('Riverfront_Plaza'))
+    const hasKeyFact = /120\s*kPa/i.test(text)
+    // At least one must be false — BM25 alone cannot answer this semantic query
+    expect(hasStrongCitation && hasKeyFact).toBe(false)
+  })
+})
+
+// ─── Hybrid Mode ──────────────────────────────────────────────────────────────
+test.describe('Hybrid Mode @expensive', () => {
+  test.beforeEach(async () => {
+    await configureAISettings(handle.page, { retrievalMode: 'auto' })
+    await handle.page.click('a[href="/chat"]')
+  })
+
+  test('semantic bearing-capacity query returns 120 kPa fact', async () => {
+    const { page } = handle
+    const { text, citations } = await sendChatMessage(
+      page,
+      'What load can the soil safely support?',
+    )
+    expect(citations.length).toBeGreaterThan(0)
+    expect(citations[0].fileName).toContain('Riverfront_Plaza')
+    expect(text).toMatch(/120\s*kPa|bearing capacity.*120|120.*allowable/i)
+  })
+
+  test('semantic liquefaction query returns seismic fact', async () => {
+    const { page } = handle
+    const { text } = await sendChatMessage(
+      page,
+      'Is the site at risk of ground movement during an earthquake?',
+    )
+    expect(text).toMatch(/liquefaction|0\.18g|seismic amplification/i)
+  })
+
+  test('synthesis query spans both foundation and seismic sections', async () => {
+    const { page } = handle
+    const { text } = await sendChatMessage(page, 'Summarise the foundation options and their risks')
+    expect(text).toMatch(/piles?|14\s*m/i)
+    expect(text).toMatch(/120|bearing capacity/i)
   })
 })
