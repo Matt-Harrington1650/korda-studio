@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ChevronDown, Loader2 } from 'lucide-react'
+import type { EmbeddingStats } from '../../../shared/contracts/embedding-provider-contract'
 import type { FileSource, IngestionStatus, RetrievalResult } from '../../../shared/ipc-types'
 import { ChunkPreview } from './components/ChunkPreview'
 import { KnowledgeResults } from './components/KnowledgeResults'
@@ -32,6 +33,7 @@ export function KnowledgeModule() {
   const [sourceId, setSourceId] = useState<string | undefined>(undefined)
   const [project, setProject] = useState<string | undefined>(undefined)
   const [ingestionStatus, setIngestionStatus] = useState<IngestionStatus | null>(null)
+  const [embeddingStats, setEmbeddingStats] = useState<EmbeddingStats | null>(null)
   const [sources, setSources] = useState<FileSource[]>([])
   const [projects, setProjects] = useState<string[]>([])
   const [lastQuery, setLastQuery] = useState('')
@@ -175,6 +177,16 @@ export function KnowledgeModule() {
     }
   }, [pollStatus])
 
+  useEffect(() => {
+    void window.kordaAPI
+      .getEmbeddingStats()
+      .then(setEmbeddingStats)
+      .catch(() => setEmbeddingStats(null))
+
+    const unsubscribe = window.kordaAPI.onEmbeddingProgress(setEmbeddingStats)
+    return unsubscribe
+  }, [])
+
   const handleQueryChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const nextValue = event.target.value
     setQuery(nextValue)
@@ -251,7 +263,11 @@ export function KnowledgeModule() {
 
   return (
     <div className="flex h-full flex-col">
-      <KnowledgeStatusBanner status={ingestionStatus} onRetry={handleRetry} />
+      <KnowledgeStatusBanner
+        status={ingestionStatus}
+        onRetry={handleRetry}
+        embeddingStats={embeddingStats}
+      />
 
       <div className="space-y-2 border-b border-border px-4 py-3">
         <div className="relative">
