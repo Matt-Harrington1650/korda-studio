@@ -4,8 +4,15 @@ import type {
   RetrievalParams,
   RetrievalProvider,
   RetrievalResult,
+  RetrievalMode,
 } from '../shared/contracts/retrieval-contract'
+import type {
+  EmbeddingProvider,
+  RerankerProvider,
+} from '../shared/contracts/embedding-provider-contract'
 import type { FileEntry, IngestionStatus } from '../shared/ipc-types'
+import type { ProviderSet } from './embeddingProviderFactory'
+import { cosineSimilarity, deserializeEmbedding, normalizeVector } from './vectorUtils'
 
 interface RetrievalRow {
   id: string
@@ -51,6 +58,10 @@ interface ChunkRow {
   created_at: number
 }
 
+interface VectorRow extends Omit<RetrievalRow, 'bm25_score' | 'highlight'> {
+  embedding: Buffer
+}
+
 const PIPELINE_STATES = [
   'new',
   'queued',
@@ -63,15 +74,65 @@ const PIPELINE_STATES = [
 ] as const
 
 export class RetrievalService implements RetrievalProvider {
-  constructor(private readonly db: Database.Database) {}
+  private readonly queryEmbeddingCache = new Map<string, Float32Array>()
+
+  constructor(
+    private readonly db: Database.Database,
+    private readonly getProviders: () => ProviderSet = () => ({ embedder: null, reranker: null }),
+  ) {}
 
   isVectorReady(): boolean {
-    return false
+    const { embedder } = this.getProviders()
+    if (!embedder) {
+      return false
+    }
+
+    const totalRow = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM chunks c
+         JOIN files f ON f.id = c.file_id
+         WHERE f.pipeline_state = 'indexed'`,
+      )
+      .get() as { count: number }
+    const incompleteRow = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM chunks c
+         JOIN files f ON f.id = c.file_id
+         WHERE f.pipeline_state = 'indexed'
+           AND (c.embedding IS NULL OR c.embedding_model != ?)`,
+      )
+      .get(embedder.modelId) as { count: number }
+
+    return totalRow.count > 0 && incompleteRow.count === 0
   }
 
   async search(params: RetrievalParams): Promise<RetrievalResult[]> {
-    const { query, sourceId, project, limit = 10 } = params
-    return this.keywordSearch(query, sourceId, project, limit)
+    const { embedder, reranker } = this.getProviders()
+    const effectiveMode = this.resolveMode(params.mode, embedder)
+    const limit = params.limit ?? 10
+
+    if (effectiveMode === 'keyword') {
+      return this.keywordSearch(params.query, params.sourceId, params.project, limit)
+    }
+
+    if (effectiveMode === 'vector') {
+      const queryVector = await this.embedQuery(params.query, embedder!)
+      const results = await this.searchVector(params, queryVector, limit)
+      return reranker ? this.applyRerank(params.query, results, reranker, limit) : results
+    }
+
+    const [keywordResults, vectorResults] = await Promise.all([
+      Promise.resolve(this.keywordSearch(params.query, params.sourceId, params.project, limit * 2)),
+      (async () => {
+        const queryVector = await this.embedQuery(params.query, embedder!)
+        return this.searchVector(params, queryVector, limit * 2)
+      })(),
+    ])
+    const merged = this.mergeWithRRF(keywordResults, vectorResults).slice(0, limit)
+
+    return reranker ? this.applyRerank(params.query, merged, reranker, limit) : merged
   }
 
   getAdjacentChunks(
@@ -129,6 +190,158 @@ export class RetrievalService implements RetrievalProvider {
       totalChunks,
       avgChunksPerFile: counts.indexed > 0 ? Math.round(totalChunks / counts.indexed) : 0,
     }
+  }
+
+  private resolveMode(
+    requested: RetrievalMode | undefined,
+    embedder: EmbeddingProvider | null,
+  ): 'keyword' | 'vector' | 'hybrid' {
+    const mode = requested ?? 'auto'
+    if (mode === 'auto') {
+      return embedder && this.isVectorReady() ? 'hybrid' : 'keyword'
+    }
+    if ((mode === 'vector' || mode === 'hybrid') && (!embedder || !this.isVectorReady())) {
+      return 'keyword'
+    }
+    return mode
+  }
+
+  private async searchVector(
+    params: RetrievalParams,
+    queryEmbedding: Float32Array,
+    limit: number,
+  ): Promise<RetrievalResult[]> {
+    const { embedder } = this.getProviders()
+    const rows = this.db
+      .prepare(
+        `SELECT
+          c.id,
+          c.file_id,
+          c.chunk_index,
+          c.text,
+          c.token_count,
+          c.char_count,
+          c.page_number,
+          c.section_title,
+          c.sheet_name,
+          c.embedding,
+          c.created_at,
+          c.source_id AS chunk_source_id,
+          f.path,
+          f.name,
+          f.ext,
+          f.size_bytes,
+          f.modified_ms,
+          f.project,
+          f.discipline,
+          f.doc_type,
+          f.source_id,
+          f.drawing_number,
+          f.revision,
+          f.issue_status
+        FROM chunks c
+        JOIN files f ON f.id = c.file_id
+        WHERE c.embedding IS NOT NULL
+          AND c.embedding_model = ?
+          AND f.pipeline_state = 'indexed'
+          AND (? IS NULL OR f.source_id = ?)
+          AND (? IS NULL OR f.project = ?)
+        ORDER BY c.chunk_index`,
+      )
+      .all(
+        embedder!.modelId,
+        params.sourceId ?? null,
+        params.sourceId ?? null,
+        params.project ?? null,
+        params.project ?? null,
+      ) as VectorRow[]
+
+    return rows
+      .map((row) => ({
+        row,
+        score: cosineSimilarity(queryEmbedding, deserializeEmbedding(row.embedding)),
+      }))
+      .filter((result) => result.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(({ row, score }) => ({
+        chunk: this.mapChunk(row),
+        file: this.mapFile(row),
+        bm25Score: null,
+        vectorDistance: score,
+        rrfScore: null,
+        highlight: '',
+      }))
+  }
+
+  private mergeWithRRF(
+    bm25Results: RetrievalResult[],
+    vectorResults: RetrievalResult[],
+  ): RetrievalResult[] {
+    const K = 60
+    const scores = new Map<string, { result: RetrievalResult; rrf: number }>()
+
+    bm25Results.forEach((result, rank) => {
+      const rrf = 1 / (K + rank + 1)
+      const existing = scores.get(result.chunk.id)
+      scores.set(result.chunk.id, {
+        result,
+        rrf: (existing?.rrf ?? 0) + rrf,
+      })
+    })
+
+    vectorResults.forEach((result, rank) => {
+      const rrf = 1 / (K + rank + 1)
+      const existing = scores.get(result.chunk.id)
+      scores.set(result.chunk.id, {
+        result: existing?.result ?? result,
+        rrf: (existing?.rrf ?? 0) + rrf,
+      })
+    })
+
+    return [...scores.values()]
+      .sort((a, b) => b.rrf - a.rrf)
+      .map(({ result, rrf }) => ({
+        ...result,
+        rrfScore: rrf,
+      }))
+  }
+
+  private async applyRerank(
+    query: string,
+    results: RetrievalResult[],
+    reranker: RerankerProvider,
+    topN: number,
+  ): Promise<RetrievalResult[]> {
+    if (results.length === 0) {
+      return results
+    }
+
+    const reranked = await reranker.rerank(
+      query,
+      results.map((result) => result.chunk.text),
+      topN,
+    )
+
+    return reranked.map(({ index }) => results[index]).filter(Boolean)
+  }
+
+  private async embedQuery(query: string, embedder: EmbeddingProvider): Promise<Float32Array> {
+    const key = `${embedder.modelId}:${query}`
+    const cached = this.queryEmbeddingCache.get(key)
+    if (cached) {
+      return cached
+    }
+
+    const [raw] = await embedder.embed([query], 'query')
+    const vector = normalizeVector(new Float32Array(raw))
+
+    this.queryEmbeddingCache.set(key, vector)
+    if (this.queryEmbeddingCache.size > 100) {
+      this.queryEmbeddingCache.delete(this.queryEmbeddingCache.keys().next().value!)
+    }
+
+    return vector
   }
 
   private keywordSearch(
@@ -223,7 +436,7 @@ export class RetrievalService implements RetrievalProvider {
     return this.mapChunk(row)
   }
 
-  private mapChunk(row: ChunkRow | RetrievalRow): ChunkRecord {
+  private mapChunk(row: ChunkRow | RetrievalRow | VectorRow): ChunkRecord {
     return {
       id: row.id,
       fileId: row.file_id,
@@ -240,7 +453,7 @@ export class RetrievalService implements RetrievalProvider {
     }
   }
 
-  private mapFile(row: RetrievalRow): FileEntry {
+  private mapFile(row: RetrievalRow | VectorRow): FileEntry {
     return {
       path: row.path,
       name: row.name,
@@ -262,8 +475,8 @@ export class RetrievalService implements RetrievalProvider {
 let service: RetrievalService | null = null
 
 export const retrievalService = {
-  init(db: Database.Database): void {
-    service = new RetrievalService(db)
+  init(db: Database.Database, getProviders?: () => ProviderSet): void {
+    service = new RetrievalService(db, getProviders)
   },
   search(params: RetrievalParams): Promise<RetrievalResult[]> {
     if (!service) throw new Error('retrievalService not initialized')

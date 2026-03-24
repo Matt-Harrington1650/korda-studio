@@ -140,6 +140,7 @@ export const searchKnowledgeBaseTool: AgentTool = {
           sourceId: combo.sourceId,
           project: combo.project,
           limit,
+          mode: 'auto',
         })
         scopedResults.push(...results)
       }

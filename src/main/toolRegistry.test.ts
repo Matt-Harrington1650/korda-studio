@@ -125,12 +125,14 @@ describe('ToolRegistryImpl', () => {
       sourceId: 'src1',
       project: 'proj1',
       limit: 10,
+      mode: 'auto',
     })
     expect(mockSearch).toHaveBeenNthCalledWith(2, {
       query: 'beam loads',
       sourceId: 'src2',
       project: 'proj1',
       limit: 10,
+      mode: 'auto',
     })
   })
 

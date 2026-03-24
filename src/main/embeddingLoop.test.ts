@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import type { EmbeddingProvider } from '../shared/contracts/embedding-provider-contract'
+import type { EmbeddingProgressPayload } from '../shared/ipc-types'
 import type { ProviderSet } from './embeddingProviderFactory'
 import { EmbeddingLoop } from './embeddingLoop'
 import { deserializeEmbedding } from './vectorUtils'
@@ -64,7 +65,11 @@ describe('EmbeddingLoop', () => {
       fakeEmbedding,
     ])
 
-    const loop = new EmbeddingLoop(db, getProviders, mockEmit)
+    const loop = new EmbeddingLoop(
+      db,
+      getProviders,
+      mockEmit as unknown as (payload: EmbeddingProgressPayload) => void,
+    )
     await (
       loop as unknown as { processBatch: (embedder: EmbeddingProvider) => Promise<void> }
     ).processBatch(mockEmbedder)
@@ -83,7 +88,11 @@ describe('EmbeddingLoop', () => {
   it('skips batch when no embedder is configured', async () => {
     seedChunks(db, 1)
     const noProvider = () => ({ embedder: null, reranker: null })
-    const loop = new EmbeddingLoop(db, noProvider, mockEmit)
+    const loop = new EmbeddingLoop(
+      db,
+      noProvider,
+      mockEmit as unknown as (payload: EmbeddingProgressPayload) => void,
+    )
 
     await (loop as unknown as { tick: () => Promise<void> }).tick()
 
@@ -96,7 +105,11 @@ describe('EmbeddingLoop', () => {
     err.status = 429
     ;(mockEmbedder.embed as ReturnType<typeof vi.fn>).mockRejectedValue(err)
 
-    const loop = new EmbeddingLoop(db, getProviders, mockEmit)
+    const loop = new EmbeddingLoop(
+      db,
+      getProviders,
+      mockEmit as unknown as (payload: EmbeddingProgressPayload) => void,
+    )
 
     await expect(
       (
@@ -113,7 +126,11 @@ describe('EmbeddingLoop', () => {
     ).run()
     ;(mockEmbedder.embed as ReturnType<typeof vi.fn>).mockResolvedValue([Array(1024).fill(0)])
 
-    const loop = new EmbeddingLoop(db, getProviders, mockEmit)
+    const loop = new EmbeddingLoop(
+      db,
+      getProviders,
+      mockEmit as unknown as (payload: EmbeddingProgressPayload) => void,
+    )
 
     await (
       loop as unknown as { processBatch: (embedder: EmbeddingProvider) => Promise<void> }
@@ -132,7 +149,11 @@ describe('EmbeddingLoop', () => {
       "UPDATE chunks SET embedding = X'00', embedding_model = 'voyage-3' WHERE id = 'chunk-0'",
     ).run()
 
-    const loop = new EmbeddingLoop(db, getProviders, mockEmit)
+    const loop = new EmbeddingLoop(
+      db,
+      getProviders,
+      mockEmit as unknown as (payload: EmbeddingProgressPayload) => void,
+    )
     const stats = loop.getStats()
 
     expect(stats.total).toBe(3)
@@ -143,7 +164,11 @@ describe('EmbeddingLoop', () => {
   })
 
   it('init is idempotent and does not leak timers', () => {
-    const loop = new EmbeddingLoop(db, getProviders, mockEmit)
+    const loop = new EmbeddingLoop(
+      db,
+      getProviders,
+      mockEmit as unknown as (payload: EmbeddingProgressPayload) => void,
+    )
 
     loop.init()
     loop.init()

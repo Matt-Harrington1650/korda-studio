@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RetrievalService } from './retrievalService'
+import { normalizeVector, serializeEmbedding } from './vectorUtils'
 
 function buildTestDb() {
   const db = new Database(':memory:')
@@ -40,6 +41,7 @@ function buildTestDb() {
       section_title TEXT,
       sheet_name TEXT,
       embedding BLOB,
+      embedding_model TEXT,
       created_at INTEGER NOT NULL,
       UNIQUE(file_id, chunk_index)
     )
@@ -171,5 +173,139 @@ describe('RetrievalService', () => {
     expect(status.total).toBe(1)
     expect(status.totalChunks).toBe(2)
     expect(status.avgChunksPerFile).toBe(2)
+  })
+})
+
+describe('RetrievalService - vector and hybrid', () => {
+  let db: Database.Database
+  let service: RetrievalService
+
+  function mockProvider(modelId = 'voyage-3') {
+    return {
+      embedder: {
+        modelId,
+        dimensions: 4,
+        maxBatchSize: 96,
+        embed: vi.fn().mockResolvedValue([[1, 0, 0, 0]]),
+      },
+      reranker: null,
+    }
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:')
+    db.exec(`
+      CREATE TABLE files (
+        id INTEGER PRIMARY KEY,
+        path TEXT,
+        name TEXT,
+        ext TEXT,
+        size_bytes INTEGER DEFAULT 0,
+        modified_ms INTEGER DEFAULT 0,
+        project TEXT,
+        discipline TEXT,
+        doc_type TEXT,
+        source_id TEXT,
+        drawing_number TEXT,
+        revision TEXT,
+        issue_status TEXT,
+        pipeline_state TEXT DEFAULT 'indexed'
+      );
+      CREATE TABLE chunks (
+        id TEXT PRIMARY KEY,
+        file_id INTEGER,
+        source_id TEXT DEFAULT 'default',
+        chunk_index INTEGER DEFAULT 0,
+        text TEXT,
+        token_count INTEGER DEFAULT 10,
+        char_count INTEGER DEFAULT 10,
+        page_number INTEGER,
+        section_title TEXT,
+        sheet_name TEXT,
+        embedding BLOB,
+        embedding_model TEXT,
+        created_at INTEGER DEFAULT 0
+      );
+      CREATE VIRTUAL TABLE chunks_fts USING fts5(
+        text,
+        section_title,
+        content='chunks',
+        content_rowid='rowid',
+        tokenize='porter unicode61'
+      );
+      CREATE TRIGGER chunks_ai AFTER INSERT ON chunks BEGIN
+        INSERT INTO chunks_fts(rowid, text, section_title) VALUES (new.rowid, new.text, new.section_title);
+      END;
+      INSERT INTO files (id, path, name, ext, source_id, pipeline_state)
+      VALUES (1, '/a.txt', 'a.txt', '.txt', 'src1', 'indexed');
+    `)
+
+    const insertChunk = db.prepare(
+      `INSERT INTO chunks (id, file_id, text, embedding, embedding_model)
+       VALUES (?, 1, ?, ?, 'voyage-3')`,
+    )
+    const vec0 = normalizeVector(new Float32Array([1, 0, 0, 0]))
+    const vec1 = normalizeVector(new Float32Array([0.5, 0.5, 0, 0]))
+    const vec2 = normalizeVector(new Float32Array([0, 0, 1, 0]))
+
+    insertChunk.run('c0', 'semantic match document', serializeEmbedding(vec0))
+    insertChunk.run('c1', 'partial match document', serializeEmbedding(vec1))
+    insertChunk.run('c2', 'unrelated document about cats', serializeEmbedding(vec2))
+
+    service = new RetrievalService(db, () => mockProvider())
+  })
+
+  afterEach(() => {
+    db.close()
+  })
+
+  it('isVectorReady returns true when all chunks have current model embeddings', () => {
+    expect(service.isVectorReady()).toBe(true)
+  })
+
+  it('isVectorReady returns false when embedder is null', () => {
+    const noEmbedService = new RetrievalService(db, () => ({ embedder: null, reranker: null }))
+
+    expect(noEmbedService.isVectorReady()).toBe(false)
+  })
+
+  it('vector mode returns results sorted by cosine similarity', async () => {
+    const results = await service.search({ query: 'semantic', mode: 'vector', limit: 3 })
+
+    expect(results[0].chunk.id).toBe('c0')
+    expect(results[0].vectorDistance).not.toBeNull()
+  })
+
+  it('hybrid mode returns RRF-merged results', async () => {
+    const results = await service.search({ query: 'document', mode: 'hybrid', limit: 3 })
+
+    expect(results.length).toBeGreaterThan(0)
+    expect(results[0].rrfScore).not.toBeNull()
+  })
+
+  it('auto mode falls back to keyword when embedder is null', async () => {
+    const noEmbedService = new RetrievalService(db, () => ({ embedder: null, reranker: null }))
+    const results = await noEmbedService.search({ query: 'document', mode: 'auto', limit: 5 })
+
+    expect(results.length).toBeGreaterThan(0)
+  })
+
+  it('applies reranker when present', async () => {
+    const mockReranker = {
+      rerankModelId: 'rerank-v3',
+      rerank: vi.fn().mockResolvedValue([
+        { index: 1, relevanceScore: 0.9 },
+        { index: 0, relevanceScore: 0.5 },
+      ]),
+    }
+    const rerankService = new RetrievalService(db, () => ({
+      embedder: mockProvider().embedder,
+      reranker: mockReranker,
+    }))
+
+    const results = await rerankService.search({ query: 'document', mode: 'vector', limit: 2 })
+
+    expect(mockReranker.rerank).toHaveBeenCalled()
+    expect(results[0].chunk.id).toBe('c1')
   })
 })
