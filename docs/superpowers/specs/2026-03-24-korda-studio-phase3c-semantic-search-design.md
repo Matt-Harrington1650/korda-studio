@@ -149,12 +149,13 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
 ### 3.4 Updates to `src/shared/ipc-types.ts`
 
 ```typescript
-// New payload type
+// New payload type — mirrors EmbeddingStats (emitted by EmbeddingLoop on each batch)
 export interface EmbeddingProgressPayload {
   embedded: number
   total: number
   percent: number
   isReady: boolean
+  hasProvider: boolean
 }
 
 // New IPC channels (add to IPC_CHANNELS object)
