@@ -122,4 +122,111 @@ describe('preload knowledge and ingestion bridges', () => {
       handler,
     )
   })
+
+  it('bridges chatSendGrounded through ipcRenderer.invoke', () => {
+    const api = electronState.exposedApi as {
+      chatSendGrounded: (params: {
+        conversationId: string
+        content: string
+        model: string
+        scopeSourceIds: string[]
+        projectFilters: string[]
+      }) => unknown
+    }
+
+    api.chatSendGrounded({
+      conversationId: 'conv-1',
+      content: 'fire rating corridor',
+      model: 'claude-sonnet-4-6',
+      scopeSourceIds: ['src1'],
+      projectFilters: ['HospitalExpansion'],
+    })
+
+    expect(electronState.ipcRenderer.invoke).toHaveBeenCalledWith(IPC_CHANNELS.CHAT_SEND_GROUNDED, {
+      conversationId: 'conv-1',
+      content: 'fire rating corridor',
+      model: 'claude-sonnet-4-6',
+      scopeSourceIds: ['src1'],
+      projectFilters: ['HospitalExpansion'],
+    })
+  })
+
+  it('registers and unregisters grounded chat listeners', () => {
+    const api = electronState.exposedApi as {
+      onChatSearching: (cb: (messageId: string) => void) => () => void
+      onChatCitation: (
+        cb: (payload: {
+          messageId: string
+          index: number
+          citation: { citationIndex: number; excerpt: string }
+        }) => void,
+      ) => () => void
+      onChatGroundedDone: (
+        cb: (payload: { messageId: string; finalText: string }) => void,
+      ) => () => void
+    }
+    const onSearching = vi.fn()
+    const onCitation = vi.fn()
+    const onGroundedDone = vi.fn()
+
+    const unsubscribeSearching = api.onChatSearching(onSearching)
+    const unsubscribeCitation = api.onChatCitation(onCitation)
+    const unsubscribeGroundedDone = api.onChatGroundedDone(onGroundedDone)
+
+    const searchingHandler = vi.mocked(electronState.ipcRenderer.on).mock.calls[0][1] as (
+      event: unknown,
+      payload: string,
+    ) => void
+    const citationHandler = vi.mocked(electronState.ipcRenderer.on).mock.calls[1][1] as (
+      event: unknown,
+      payload: {
+        messageId: string
+        index: number
+        citation: { citationIndex: number; excerpt: string }
+      },
+    ) => void
+    const groundedDoneHandler = vi.mocked(electronState.ipcRenderer.on).mock.calls[2][1] as (
+      event: unknown,
+      payload: { messageId: string; finalText: string },
+    ) => void
+
+    searchingHandler({}, 'asst-1')
+    citationHandler(
+      {},
+      {
+        messageId: 'asst-1',
+        index: 1,
+        citation: { citationIndex: 1, excerpt: '2 hours' },
+      },
+    )
+    groundedDoneHandler({}, { messageId: 'asst-1', finalText: 'Grounded answer' })
+
+    expect(onSearching).toHaveBeenCalledWith('asst-1')
+    expect(onCitation).toHaveBeenCalledWith({
+      messageId: 'asst-1',
+      index: 1,
+      citation: { citationIndex: 1, excerpt: '2 hours' },
+    })
+    expect(onGroundedDone).toHaveBeenCalledWith({
+      messageId: 'asst-1',
+      finalText: 'Grounded answer',
+    })
+
+    unsubscribeSearching()
+    unsubscribeCitation()
+    unsubscribeGroundedDone()
+
+    expect(electronState.ipcRenderer.removeListener).toHaveBeenCalledWith(
+      IPC_CHANNELS.CHAT_SEARCHING,
+      searchingHandler,
+    )
+    expect(electronState.ipcRenderer.removeListener).toHaveBeenCalledWith(
+      IPC_CHANNELS.CHAT_CITATION,
+      citationHandler,
+    )
+    expect(electronState.ipcRenderer.removeListener).toHaveBeenCalledWith(
+      IPC_CHANNELS.CHAT_GROUNDED_DONE,
+      groundedDoneHandler,
+    )
+  })
 })

@@ -1,9 +1,12 @@
+import { useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Copy, Pencil, RefreshCcw } from 'lucide-react'
 import { humanizeAge } from '@shared/utils/humanizeAge'
 import type { ChatMessage } from '../../../../shared/ipc-types'
+import { CitationMarker } from './CitationMarker'
+import { CitationPanel, type CitationPanelHandle } from './CitationPanel'
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -33,6 +36,89 @@ export function MessageBubble({
   onSaveEdit,
 }: MessageBubbleProps) {
   const isAssistant = message.role === 'assistant'
+  const panelRef = useRef<CitationPanelHandle | null>(null)
+
+  const renderCitationText = (content: string) =>
+    content.split(/(\[\d+\])/g).map((part, index) => {
+      const match = /^\[(\d+)\]$/.exec(part)
+      if (!match) {
+        return <span key={`text-${index}`}>{part}</span>
+      }
+
+      const citationIndex = Number(match[1])
+      return (
+        <CitationMarker
+          key={`citation-${index}`}
+          index={citationIndex}
+          onCitationClick={() => panelRef.current?.scrollToIndex(citationIndex - 1)}
+        />
+      )
+    })
+
+  const renderPlainAssistantContent = () => (
+    <div className="prose prose-invert max-w-none text-sm prose-p:my-2 prose-pre:my-0 prose-code:text-[13px]">
+      <ReactMarkdown
+        components={{
+          code(props) {
+            const { className, children } = props
+            const match = /language-(\w+)/.exec(className || '')
+
+            if (match) {
+              const codeText = String(children).replace(/\n$/, '')
+
+              return (
+                <div className="my-3 overflow-hidden rounded-xl border border-border bg-surface-base">
+                  <div className="flex items-center justify-between border-b border-border px-3 py-2 text-[11px] uppercase tracking-widest text-text-secondary">
+                    <span>{match[1]}</span>
+                    <button
+                      type="button"
+                      aria-label="Copy code block"
+                      onClick={() => void navigator.clipboard.writeText(codeText)}
+                      className="rounded px-2 py-1 transition-colors hover:bg-white/5 hover:text-text-primary"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <SyntaxHighlighter
+                    PreTag="div"
+                    language={match[1]}
+                    style={oneDark}
+                    customStyle={{ margin: 0, borderRadius: 0, background: 'transparent' }}
+                  >
+                    {codeText}
+                  </SyntaxHighlighter>
+                </div>
+              )
+            }
+
+            return <code className={className}>{children}</code>
+          },
+        }}
+      >
+        {message.content}
+      </ReactMarkdown>
+    </div>
+  )
+
+  const renderGroundedAssistantContent = () => (
+    <div className="space-y-3">
+      {message.mode === 'grounded_fallback' && (
+        <div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          No matching documents found in selected scope - answering from general knowledge
+        </div>
+      )}
+      <div className="whitespace-pre-wrap text-sm leading-7 text-text-primary">
+        {renderCitationText(message.content)}
+      </div>
+      {message.citations && message.citations.length > 0 && (
+        <CitationPanel
+          ref={panelRef}
+          citations={message.citations}
+          evidenceStatus={message.evidenceStatus}
+        />
+      )}
+    </div>
+  )
 
   return (
     <article
@@ -116,52 +202,11 @@ export function MessageBubble({
             </div>
           </div>
         ) : isAssistant ? (
-          <div className="prose prose-invert max-w-none text-sm prose-p:my-2 prose-pre:my-0 prose-code:text-[13px]">
-            <ReactMarkdown
-              components={{
-                code(props) {
-                  const { className, children } = props
-                  const match = /language-(\w+)/.exec(className || '')
-
-                  if (match) {
-                    const codeText = String(children).replace(/\n$/, '')
-
-                    return (
-                      <div className="my-3 overflow-hidden rounded-xl border border-border bg-surface-base">
-                        <div className="flex items-center justify-between border-b border-border px-3 py-2 text-[11px] uppercase tracking-widest text-text-secondary">
-                          <span>{match[1]}</span>
-                          <button
-                            type="button"
-                            aria-label="Copy code block"
-                            onClick={() => void navigator.clipboard.writeText(codeText)}
-                            className="rounded px-2 py-1 transition-colors hover:bg-white/5 hover:text-text-primary"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                        <SyntaxHighlighter
-                          PreTag="div"
-                          language={match[1]}
-                          style={oneDark}
-                          customStyle={{ margin: 0, borderRadius: 0, background: 'transparent' }}
-                        >
-                          {codeText}
-                        </SyntaxHighlighter>
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <code className={className}>
-                      {children}
-                    </code>
-                  )
-                },
-              }}
-            >
-              {message.content}
-            </ReactMarkdown>
-          </div>
+          message.mode === 'grounded' || message.mode === 'grounded_fallback' ? (
+            renderGroundedAssistantContent()
+          ) : (
+            renderPlainAssistantContent()
+          )
         ) : (
           <div className="whitespace-pre-wrap text-sm">{message.content}</div>
         )}

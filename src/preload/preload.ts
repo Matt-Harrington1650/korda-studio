@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../shared/ipc-types'
 import type {
+  Citation,
+  GroundedDonePayload,
+  GroundedSendParams,
   IngestionProgressEvent,
   RetrievalParams,
   SendParams,
@@ -37,6 +40,8 @@ contextBridge.exposeInMainWorld('kordaAPI', {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.FILE_INDEX_PROGRESS, handler)
   },
   chatSend: (params: SendParams) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND, params),
+  chatSendGrounded: (params: GroundedSendParams) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND_GROUNDED, params),
   chatStop: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_STOP),
   chatConversationsList: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_CONVERSATIONS_LIST),
   chatConversationGet: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_CONVERSATION_GET, id),
@@ -68,6 +73,26 @@ contextBridge.exposeInMainWorld('kordaAPI', {
     const handler = (_: Electron.IpcRendererEvent, message: string) => cb(message)
     ipcRenderer.on(IPC_CHANNELS.CHAT_ERROR, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_ERROR, handler)
+  },
+  onChatSearching: (cb: (messageId: string) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, messageId: string) => cb(messageId)
+    ipcRenderer.on(IPC_CHANNELS.CHAT_SEARCHING, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_SEARCHING, handler)
+  },
+  onChatCitation: (
+    cb: (payload: { messageId: string; index: number; citation: Citation }) => void,
+  ) => {
+    const handler = (
+      _: Electron.IpcRendererEvent,
+      payload: { messageId: string; index: number; citation: Citation },
+    ) => cb(payload)
+    ipcRenderer.on(IPC_CHANNELS.CHAT_CITATION, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_CITATION, handler)
+  },
+  onChatGroundedDone: (cb: (payload: GroundedDonePayload) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: GroundedDonePayload) => cb(payload)
+    ipcRenderer.on(IPC_CHANNELS.CHAT_GROUNDED_DONE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_GROUNDED_DONE, handler)
   },
   fileIndexSourcesList: () => ipcRenderer.invoke(IPC_CHANNELS.FILE_INDEX_SOURCES_LIST),
   fileIndexSourceSave: (source: import('../shared/file-sources').FileSource) =>

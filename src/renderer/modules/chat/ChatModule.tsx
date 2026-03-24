@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import type { ChatMessage, Conversation } from '../../../shared/ipc-types'
+import type {
+  ChatMessage,
+  Citation,
+  Conversation,
+  GroundedDonePayload,
+} from '../../../shared/ipc-types'
 import { ChatInput } from './components/ChatInput'
 import { ConversationList } from './components/ConversationList'
 import { MessageThread } from './components/MessageThread'
@@ -11,20 +16,39 @@ type ApiKeySource = 'env' | 'store' | 'none'
 export default function ChatModule() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const activeConversationIdRef = useRef<string | null>(null)
+  const previousConversationIdRef = useRef<string | null>(null)
 
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [model, setModel] = useState(CHAT_MODEL_OPTIONS[1].id)
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([])
   const [pendingAssistantId, setPendingAssistantId] = useState<string | null>(null)
   const [pendingAssistantContent, setPendingAssistantContent] = useState('')
+  const [pendingAssistantMode, setPendingAssistantMode] = useState<ChatMessage['mode']>('plain')
+  const [pendingCitations, setPendingCitations] = useState<Citation[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [apiKeySource, setApiKeySource] = useState<ApiKeySource>('none')
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId
+  }, [activeConversationId])
+
+  useEffect(() => {
+    const previousConversationId = previousConversationIdRef.current
+    if (
+      previousConversationId &&
+      activeConversationId &&
+      previousConversationId !== activeConversationId
+    ) {
+      setSelectedSourceIds([])
+      setSelectedProjects([])
+    }
+    previousConversationIdRef.current = activeConversationId
   }, [activeConversationId])
 
   const loadConversation = useCallback(async (conversationId: string) => {
@@ -64,29 +88,93 @@ export default function ChatModule() {
     const unsubscribeDone = window.kordaAPI.onChatDone(() => {
       const currentConversationId = activeConversationIdRef.current
       setIsStreaming(false)
+      setIsSearching(false)
       setStreamError(null)
       setPendingAssistantId(null)
       setPendingAssistantContent('')
+      setPendingAssistantMode('plain')
+      setPendingCitations([])
       if (currentConversationId) {
         void loadConversation(currentConversationId)
       }
       void reloadConversations(currentConversationId)
     })
+    const unsubscribeSearching = window.kordaAPI.onChatSearching((messageId) => {
+      setPendingAssistantId(messageId)
+      setPendingAssistantMode('grounded')
+      setIsSearching(true)
+      setIsStreaming(true)
+    })
+    const unsubscribeCitation = window.kordaAPI.onChatCitation((payload) => {
+      setPendingAssistantId(payload.messageId)
+      setPendingAssistantMode('grounded')
+      setPendingCitations((current) => [...current, payload.citation])
+    })
+    const unsubscribeGroundedDone = window.kordaAPI.onChatGroundedDone(
+      (payload: GroundedDonePayload) => {
+        const currentConversationId = activeConversationIdRef.current
+
+        setMessages((current) => {
+          const nextMessage: ChatMessage = {
+            id: payload.messageId,
+            conversationId:
+              currentConversationId ?? current[0]?.conversationId ?? 'pending-conversation',
+            role: 'assistant',
+            content: payload.finalText,
+            createdAt: Date.now(),
+            model,
+            inputTokens: payload.inputTokens,
+            outputTokens: payload.outputTokens,
+            mode: 'grounded',
+            citations: payload.citations,
+            evidenceStatus: payload.evidenceStatus,
+            groundedChunkCount: payload.chunkCount,
+          }
+
+          const existingIndex = current.findIndex((message) => message.id === payload.messageId)
+          if (existingIndex >= 0) {
+            return current.map((message) =>
+              message.id === payload.messageId ? { ...message, ...nextMessage } : message,
+            )
+          }
+
+          return [...current, nextMessage]
+        })
+
+        setIsSearching(false)
+        setIsStreaming(false)
+        setStreamError(null)
+        setPendingAssistantId(null)
+        setPendingAssistantContent('')
+        setPendingAssistantMode('plain')
+        setPendingCitations([])
+
+        if (currentConversationId) {
+          void loadConversation(currentConversationId)
+        }
+        void reloadConversations(currentConversationId)
+      },
+    )
     const unsubscribeError = window.kordaAPI.onChatError((message) => {
       if (message.toLowerCase().includes('abort')) {
         setIsStreaming(false)
+        setIsSearching(false)
         return
       }
       setIsStreaming(false)
+      setIsSearching(false)
       setStreamError(message)
     })
 
     return () => {
       unsubscribeToken()
       unsubscribeDone()
+      unsubscribeSearching()
+      unsubscribeCitation()
+      unsubscribeGroundedDone()
       unsubscribeError()
     }
-  }, [loadConversation, reloadConversations])
+  }, [loadConversation, model, reloadConversations])
 
   useEffect(() => {
     if (activeConversationId) {
@@ -118,21 +206,33 @@ export default function ChatModule() {
       }
 
       setIsStreaming(true)
+      setIsSearching(false)
       setStreamError(null)
       setPendingAssistantContent('')
+      setPendingCitations([])
 
-      const { messageId } = await window.kordaAPI.chatSend({
-        conversationId,
-        content: trimmedContent,
-        model,
-      })
+      const isGrounded = selectedSourceIds.length > 0
+      const { messageId } = isGrounded
+        ? await window.kordaAPI.chatSendGrounded({
+            conversationId,
+            content: trimmedContent,
+            model,
+            scopeSourceIds: selectedSourceIds,
+            projectFilters: selectedProjects,
+          })
+        : await window.kordaAPI.chatSend({
+            conversationId,
+            content: trimmedContent,
+            model,
+          })
 
       const snapshot = await window.kordaAPI.chatConversationGet(conversationId)
       setMessages(snapshot.messages)
       setPendingAssistantId(messageId)
+      setPendingAssistantMode(isGrounded ? 'grounded' : 'plain')
       await reloadConversations(conversationId)
     },
-    [createConversation, model, reloadConversations],
+    [createConversation, model, reloadConversations, selectedProjects, selectedSourceIds],
   )
 
   const handleSend = useCallback(async () => {
@@ -147,6 +247,9 @@ export default function ChatModule() {
       await window.kordaAPI.chatConversationDelete(conversationId)
       setPendingAssistantId(null)
       setPendingAssistantContent('')
+      setPendingAssistantMode('plain')
+      setPendingCitations([])
+      setIsSearching(false)
       setStreamError(null)
       await reloadConversations(wasActive ? null : activeConversationIdRef.current)
     },
@@ -170,6 +273,9 @@ export default function ChatModule() {
       await window.kordaAPI.chatMessagesDeleteFrom(conversationId, messageId)
       setPendingAssistantId(null)
       setPendingAssistantContent('')
+      setPendingAssistantMode('plain')
+      setPendingCitations([])
+      setIsSearching(false)
       setStreamError(null)
       await loadConversation(conversationId)
       await reloadConversations(conversationId)
@@ -185,15 +291,18 @@ export default function ChatModule() {
     const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user')
     if (!lastUserMessage) return
 
-    const lastAssistantMessage = [...messages].reverse().find(
-      (message) => message.role === 'assistant',
-    )
+    const lastAssistantMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === 'assistant')
     const fromMessageId =
       streamError || !lastAssistantMessage ? lastUserMessage.id : lastAssistantMessage.id
 
     await window.kordaAPI.chatMessagesDeleteFrom(conversationId, fromMessageId)
     setPendingAssistantId(null)
     setPendingAssistantContent('')
+    setPendingAssistantMode('plain')
+    setPendingCitations([])
+    setIsSearching(false)
     setStreamError(null)
     await loadConversation(conversationId)
     await reloadConversations(conversationId)
@@ -235,9 +344,12 @@ export default function ChatModule() {
         <div className="min-h-0 flex-1">
           <MessageThread
             isStreaming={isStreaming}
+            isSearching={isSearching}
             messages={messages}
             pendingAssistantContent={pendingAssistantContent}
             pendingAssistantId={pendingAssistantId}
+            pendingAssistantMode={pendingAssistantMode}
+            pendingCitations={pendingCitations}
             streamError={streamError}
             onEditMessage={handleEditMessage}
             onRegenerate={handleRegenerate}
@@ -249,12 +361,17 @@ export default function ChatModule() {
           draft={draft}
           isStreaming={isStreaming}
           model={model}
+          selectedSourceIds={selectedSourceIds}
+          selectedProjects={selectedProjects}
           onDraftChange={setDraft}
           onModelChange={setModel}
+          onSourcesChange={setSelectedSourceIds}
+          onProjectsChange={setSelectedProjects}
           onSend={() => void handleSend()}
           onStop={() => {
             void window.kordaAPI.chatStop()
             setIsStreaming(false)
+            setIsSearching(false)
           }}
         />
       </section>

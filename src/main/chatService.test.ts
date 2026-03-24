@@ -11,12 +11,20 @@ const { mockClientStream } = vi.hoisted(() => ({
   mockClientStream: vi.fn(),
 }))
 
+const { mockRunGroundedPipeline } = vi.hoisted(() => ({
+  mockRunGroundedPipeline: vi.fn(),
+}))
+
 vi.mock('./llmClient', () => ({
   AnthropicClient: class {
     stream(...args: unknown[]) {
       return mockClientStream(...args)
     }
   },
+}))
+
+vi.mock('./groundedChatService', () => ({
+  runGroundedPipeline: (...args: unknown[]) => mockRunGroundedPipeline(...args),
 }))
 
 import { chatService } from './chatService'
@@ -192,10 +200,9 @@ describe('chatService', () => {
     const secondUserMessageId = chatService.getConversation(conversation.id).messages[2].id
     chatService.deleteMessagesFrom(conversation.id, secondUserMessageId)
 
-    expect(chatService.getConversation(conversation.id).messages.map((message) => message.content)).toEqual([
-      'Message one',
-      'First',
-    ])
+    expect(
+      chatService.getConversation(conversation.id).messages.map((message) => message.content),
+    ).toEqual(['Message one', 'First'])
   })
 
   it('deletes conversations and cascades their messages', async () => {
@@ -226,5 +233,84 @@ describe('chatService', () => {
     expect(chatService.buildSystemPrompt()).toContain('engineering assistant for KORDA')
     expect(chatService.buildSystemPrompt()).toContain('Civil, Structural')
     expect(chatService.buildSystemPrompt()).toContain('TODO(phase-2E)')
+  })
+
+  it('adds the Phase 3B message columns during init', () => {
+    const db = new Database(dbPath)
+
+    try {
+      const columns = (
+        db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
+      ).map((row) => row.name)
+
+      expect(columns).toEqual(expect.arrayContaining(['mode', 'citations', 'grounded_chunk_count']))
+    } finally {
+      db.close()
+    }
+  })
+
+  it('persists grounded assistant metadata and parses citations on readback', async () => {
+    const citation = {
+      citationIndex: 1,
+      fileId: 7,
+      filePath: '/docs/fire-rating.pdf',
+      fileName: 'fire-rating.pdf',
+      chunkId: 'chunk-1',
+      excerpt: 'corridor assemblies shall achieve 2 hours',
+      pageNumber: 5,
+      sectionTitle: 'Fire Rating',
+      sourceId: 'src1',
+    }
+    mockRunGroundedPipeline.mockResolvedValue({
+      mode: 'grounded',
+      content: 'Grounded answer',
+      citations: [citation],
+      evidenceStatus: 'supported',
+      inputTokens: 30,
+      outputTokens: 40,
+      chunkCount: 2,
+      searchQueriesUsed: ['fire rating corridor'],
+    })
+
+    const conversation = chatService.newConversation()
+    const { messageId } = chatService.sendGrounded(
+      conversation.id,
+      'What is the fire rating?',
+      'claude-sonnet-4-6',
+      ['src1'],
+      ['HospitalExpansion'],
+    )
+
+    expect(chatService.getConversation(conversation.id).messages[0]).toMatchObject({
+      role: 'user',
+      content: 'What is the fire rating?',
+      mode: 'grounded',
+    })
+
+    await vi.waitFor(() => {
+      expect(chatService.getConversation(conversation.id).messages).toHaveLength(2)
+    })
+
+    const messages = chatService.getConversation(conversation.id).messages
+    expect(messages[1]).toMatchObject({
+      id: messageId,
+      role: 'assistant',
+      content: 'Grounded answer',
+      mode: 'grounded',
+      inputTokens: 30,
+      outputTokens: 40,
+      evidenceStatus: 'supported',
+      groundedChunkCount: 2,
+    })
+    expect(messages[1].citations).toEqual([citation])
+    expect(webContentsSend).toHaveBeenCalledWith(IPC_CHANNELS.CHAT_GROUNDED_DONE, {
+      messageId,
+      citations: [citation],
+      evidenceStatus: 'supported',
+      inputTokens: 30,
+      outputTokens: 40,
+      chunkCount: 2,
+      finalText: 'Grounded answer',
+    })
   })
 })

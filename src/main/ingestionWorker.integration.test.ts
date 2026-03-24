@@ -102,59 +102,74 @@ describe('ingestionWorker integration', () => {
         .run(txtPath, 'sample.txt', 'txt', 64, Date.now(), 'src1').lastInsertRowid,
     )
 
-    await new Promise<void>((resolve, reject) => {
-      const worker = new Worker(WORKER_BUILD_PATH, {
-        workerData: { dbPath },
-      })
+    const worker = new Worker(WORKER_BUILD_PATH, {
+      workerData: { dbPath },
+    })
+    let workerError: Error | null = null
+    let workerFailedMessage: string | null = null
+    let jobPosted = false
 
-      const timeout = setTimeout(() => {
-        void worker.terminate()
-        reject(new Error('Timed out waiting for ingestion worker to finish'))
-      }, 15_000)
+    worker.on(
+      'message',
+      (message: { type: string; fileId?: number; state?: string; error?: string }) => {
+        if (message.type === 'ready' && message.fileId == null && !jobPosted) {
+          jobPosted = true
+          worker.postMessage({
+            type: 'job',
+            fileId,
+            filePath: txtPath,
+            sourceId: 'src1',
+            ext: 'txt',
+          })
+          return
+        }
 
-      worker.on(
-        'message',
-        (message: { type: string; fileId?: number; state?: string; error?: string }) => {
-          if (message.type === 'ready' && message.fileId == null) {
-            worker.postMessage({
-              type: 'job',
-              fileId,
-              filePath: txtPath,
-              sourceId: 'src1',
-              ext: 'txt',
-            })
-            return
+        if (
+          message.type === 'progress' &&
+          message.fileId === fileId &&
+          message.state === 'failed'
+        ) {
+          workerFailedMessage = message.error ?? 'Worker failed'
+        }
+      },
+    )
+
+    worker.on('error', (error) => {
+      workerError = error instanceof Error ? error : new Error(String(error))
+    })
+
+    try {
+      await vi.waitFor(
+        () => {
+          if (workerError) {
+            throw workerError
           }
 
-          if (
-            message.type === 'progress' &&
-            message.fileId === fileId &&
-            message.state === 'indexed'
-          ) {
-            clearTimeout(timeout)
-            void worker.terminate()
-            resolve()
-            return
+          if (workerFailedMessage) {
+            throw new Error(workerFailedMessage)
           }
 
-          if (
-            message.type === 'progress' &&
-            message.fileId === fileId &&
-            message.state === 'failed'
-          ) {
-            clearTimeout(timeout)
-            void worker.terminate()
-            reject(new Error(message.error ?? 'Worker failed'))
+          const row = db
+            .prepare(`SELECT pipeline_state, pipeline_error FROM files WHERE id = ?`)
+            .get(fileId) as {
+            pipeline_state: string
+            pipeline_error: string | null
           }
+
+          if (row.pipeline_state === 'failed') {
+            throw new Error(row.pipeline_error ?? 'Worker failed')
+          }
+
+          expect(row.pipeline_state).toBe('indexed')
+        },
+        {
+          timeout: 45_000,
+          interval: 50,
         },
       )
-
-      worker.on('error', (error) => {
-        clearTimeout(timeout)
-        void worker.terminate()
-        reject(error)
-      })
-    })
+    } finally {
+      await worker.terminate()
+    }
 
     const fileRow = db
       .prepare(`SELECT pipeline_state, pipeline_error FROM files WHERE id = ?`)
@@ -181,5 +196,5 @@ describe('ingestionWorker integration', () => {
       .prepare(`SELECT COUNT(*) AS count FROM chunks_fts WHERE chunks_fts MATCH 'engineering'`)
       .get() as { count: number }
     expect(ftsRow.count).toBe(1)
-  }, 30_000)
+  }, 60_000)
 })

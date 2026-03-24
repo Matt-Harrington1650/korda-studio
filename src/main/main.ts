@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, screen, session, shell } from 'electron'
 import path from 'path'
-import { IPC_CHANNELS, type SendParams } from '../shared/ipc-types'
+import { IPC_CHANNELS, type GroundedSendParams, type SendParams } from '../shared/ipc-types'
 import { DEFAULT_AI_CONFIG, type AIConfig } from '../shared/ai-config'
 import type { RetrievalParams } from '../shared/contracts/retrieval-contract'
 import { chatService } from './chatService'
@@ -8,6 +8,7 @@ import type { FileSource } from '../shared/file-sources'
 import { fileIndexService } from './fileIndexService'
 import { ingestionQueue } from './ingestionQueue'
 import { retrievalService } from './retrievalService'
+import { searchKnowledgeBaseTool, toolRegistry } from './toolRegistry'
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string
 declare const MAIN_WINDOW_VITE_NAME: string
@@ -298,6 +299,16 @@ ipcMain.handle(IPC_CHANNELS.CHAT_SEND, (_event, params: SendParams) => {
   return chatService.send(params.conversationId, params.content, params.model)
 })
 
+ipcMain.handle(IPC_CHANNELS.CHAT_SEND_GROUNDED, (_event, params: GroundedSendParams) => {
+  return chatService.sendGrounded(
+    params.conversationId,
+    params.content,
+    params.model,
+    params.scopeSourceIds,
+    params.projectFilters,
+  )
+})
+
 ipcMain.handle(IPC_CHANNELS.CHAT_STOP, () => {
   chatService.stop()
 })
@@ -374,6 +385,7 @@ app.whenReady().then(async () => {
 
   try {
     chatService.init(chatDbPath, getApiKey, getPreferences, getAIConfig, mainWindow)
+    toolRegistry.register(searchKnowledgeBaseTool)
   } catch (err) {
     console.error('[KORDA] chatService.init FAILED:', err)
   }

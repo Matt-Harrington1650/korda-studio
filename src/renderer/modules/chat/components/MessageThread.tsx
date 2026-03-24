@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatMessage } from '../../../../shared/ipc-types'
+import type { ChatMessage, Citation, EvidenceStatus } from '../../../../shared/ipc-types'
 import { MessageBubble } from './MessageBubble'
 
 interface MessageThreadProps {
   isStreaming: boolean
+  isSearching?: boolean
   messages: ChatMessage[]
   pendingAssistantContent: string
   pendingAssistantId: string | null
+  pendingAssistantMode?: ChatMessage['mode']
+  pendingCitations?: Citation[]
+  pendingEvidenceStatus?: EvidenceStatus
   streamError: string | null
   onEditMessage: (messageId: string, content: string) => void | Promise<void>
   onRegenerate: () => void | Promise<void>
@@ -14,9 +18,13 @@ interface MessageThreadProps {
 
 export function MessageThread({
   isStreaming,
+  isSearching = false,
   messages,
   pendingAssistantContent,
   pendingAssistantId,
+  pendingAssistantMode = 'plain',
+  pendingCitations = [],
+  pendingEvidenceStatus,
   streamError,
   onEditMessage,
   onRegenerate,
@@ -28,22 +36,37 @@ export function MessageThread({
   const [editingValue, setEditingValue] = useState('')
 
   const pendingMessage = useMemo<ChatMessage | null>(() => {
-    if (!pendingAssistantId) return null
+    if (
+      !pendingAssistantId ||
+      (pendingAssistantContent.length === 0 && pendingCitations.length === 0)
+    ) {
+      return null
+    }
+
     return {
       id: pendingAssistantId,
       conversationId: messages[0]?.conversationId ?? 'pending-conversation',
       role: 'assistant',
       content: pendingAssistantContent,
       createdAt: Date.now(),
+      mode: pendingAssistantMode,
+      citations: pendingCitations,
+      evidenceStatus: pendingEvidenceStatus,
     }
-  }, [messages, pendingAssistantContent, pendingAssistantId])
+  }, [
+    messages,
+    pendingAssistantContent,
+    pendingAssistantId,
+    pendingAssistantMode,
+    pendingCitations,
+    pendingEvidenceStatus,
+  ])
 
   useEffect(() => {
     const container = threadRef.current
     if (!container) return
 
-    const isNearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 100
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
 
     if (autoScrollEnabled || isNearBottom) {
       if (typeof container.scrollTo === 'function') {
@@ -58,7 +81,9 @@ export function MessageThread({
     }
   }, [autoScrollEnabled, isStreaming, messages, pendingAssistantContent])
 
-  const lastAssistantId = [...messages].reverse().find((message) => message.role === 'assistant')?.id
+  const lastAssistantId = [...messages]
+    .reverse()
+    .find((message) => message.role === 'assistant')?.id
   const showEmptyState = messages.length === 0 && !pendingMessage
 
   return (
@@ -132,11 +157,15 @@ export function MessageThread({
         {isStreaming && !pendingAssistantContent && (
           <div className="flex justify-start">
             <div className="rounded-2xl border border-border bg-surface-raised/70 px-4 py-3 text-text-secondary">
-              <div className="flex items-center gap-1">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-text-secondary" />
-                <span className="h-2 w-2 animate-pulse rounded-full bg-text-secondary [animation-delay:120ms]" />
-                <span className="h-2 w-2 animate-pulse rounded-full bg-text-secondary [animation-delay:240ms]" />
-              </div>
+              {isSearching ? (
+                <div className="text-sm">Searching documents...</div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-text-secondary" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-text-secondary [animation-delay:120ms]" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-text-secondary [animation-delay:240ms]" />
+                </div>
+              )}
             </div>
           </div>
         )}

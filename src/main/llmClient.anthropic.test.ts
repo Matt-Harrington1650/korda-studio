@@ -1,24 +1,38 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockAnthropic, mockMessagesStream } = vi.hoisted(() => {
-  const hoistedMessagesStream = vi.fn()
-  const hoistedAnthropic = vi.fn(
-    class {
-      messages = {
-        stream: hoistedMessagesStream,
-      }
-    },
-  )
+const { mockAnthropic, mockMessagesCreate, mockMessagesStream, mockToolRegistry } = vi.hoisted(
+  () => {
+    const hoistedMessagesCreate = vi.fn()
+    const hoistedMessagesStream = vi.fn()
+    const hoistedAnthropic = vi.fn(
+      class {
+        messages = {
+          create: hoistedMessagesCreate,
+          stream: hoistedMessagesStream,
+        }
+      },
+    )
+    const hoistedToolRegistry = {
+      execute: vi.fn(),
+      getSchemas: vi.fn(),
+    }
 
-  return {
-    mockAnthropic: hoistedAnthropic,
-    mockMessagesStream: hoistedMessagesStream,
-  }
-})
+    return {
+      mockAnthropic: hoistedAnthropic,
+      mockMessagesCreate: hoistedMessagesCreate,
+      mockMessagesStream: hoistedMessagesStream,
+      mockToolRegistry: hoistedToolRegistry,
+    }
+  },
+)
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: mockAnthropic,
+}))
+
+vi.mock('./toolRegistry', () => ({
+  toolRegistry: mockToolRegistry,
 }))
 
 import { AnthropicClient } from './llmClient'
@@ -38,6 +52,7 @@ function createMockStream(events: unknown[], usage = { input_tokens: 11, output_
 describe('AnthropicClient', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockToolRegistry.getSchemas.mockReturnValue([])
   })
 
   it('formats messages with system as a top-level param', () => {
@@ -111,20 +126,204 @@ describe('AnthropicClient', () => {
     })
   })
 
-  it('throws a Phase 3A placeholder for streamWithTools', () => {
+  it('runs a multi-turn tool loop and batches tool results into one user turn', async () => {
+    mockToolRegistry.getSchemas.mockReturnValue([
+      {
+        name: 'search_knowledge_base',
+        description: 'Search docs',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string' },
+          },
+          required: ['query'],
+        },
+      },
+    ])
+    mockToolRegistry.execute
+      .mockResolvedValueOnce({ content: { matches: ['beam-a'] } })
+      .mockResolvedValueOnce({ content: { matches: ['beam-b'] } })
+    mockMessagesCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_1',
+            name: 'search_knowledge_base',
+            input: { query: 'beam loads' },
+          },
+          {
+            type: 'tool_use',
+            id: 'toolu_2',
+            name: 'search_knowledge_base',
+            input: { query: 'corridor loads' },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Done' }],
+      })
+
+    const controller = new AbortController()
+    const onToolCall = vi.fn()
     const client = new AnthropicClient(() => 'test-key')
 
-    expect(() =>
-      (
-        client as unknown as {
-          streamWithTools: (
-            messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-            tools: unknown[],
-            model: string,
-            systemPrompt: string,
-          ) => unknown
+    await (
+      client as unknown as {
+        runToolLoop: (
+          messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+          model: string,
+          systemPrompt: string,
+          onToolCall: (name: string, input: Record<string, unknown>) => void,
+          maxToolCalls?: number,
+          signal?: AbortSignal,
+        ) => Promise<void>
+      }
+    ).runToolLoop(
+      [{ role: 'user', content: 'Find beam criteria' }],
+      'claude-haiku-4-5',
+      'Search system',
+      onToolCall,
+      4,
+      controller.signal,
+    )
+
+    expect(mockMessagesCreate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        max_tokens: 1024,
+        model: 'claude-haiku-4-5',
+        system: 'Search system',
+        tool_choice: { type: 'auto' },
+        tools: mockToolRegistry.getSchemas(),
+        messages: [{ role: 'user', content: 'Find beam criteria' }],
+      }),
+      { signal: controller.signal },
+    )
+    expect(mockToolRegistry.execute).toHaveBeenNthCalledWith(1, 'search_knowledge_base', {
+      query: 'beam loads',
+    })
+    expect(mockToolRegistry.execute).toHaveBeenNthCalledWith(2, 'search_knowledge_base', {
+      query: 'corridor loads',
+    })
+    expect(onToolCall).toHaveBeenNthCalledWith(1, 'search_knowledge_base', { query: 'beam loads' })
+    expect(onToolCall).toHaveBeenNthCalledWith(2, 'search_knowledge_base', {
+      query: 'corridor loads',
+    })
+    expect(mockMessagesCreate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        messages: [
+          { role: 'user', content: 'Find beam criteria' },
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_1',
+                name: 'search_knowledge_base',
+                input: { query: 'beam loads' },
+              },
+              {
+                type: 'tool_use',
+                id: 'toolu_2',
+                name: 'search_knowledge_base',
+                input: { query: 'corridor loads' },
+              },
+            ],
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_1',
+                content: JSON.stringify({ matches: ['beam-a'] }),
+              },
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_2',
+                content: JSON.stringify({ matches: ['beam-b'] }),
+              },
+            ],
+          },
+        ],
+      }),
+      { signal: controller.signal },
+    )
+  })
+
+  it('stops the tool loop when maxToolCalls is reached', async () => {
+    mockMessagesCreate.mockResolvedValue({
+      stop_reason: 'tool_use',
+      content: [
+        {
+          type: 'tool_use',
+          id: 'toolu_1',
+          name: 'search_knowledge_base',
+          input: { query: 'beam loads' },
+        },
+      ],
+    })
+    mockToolRegistry.execute.mockResolvedValue({ content: { matches: ['beam-a'] } })
+
+    const client = new AnthropicClient(() => 'test-key')
+    await (
+      client as unknown as {
+        runToolLoop: (
+          messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+          model: string,
+          systemPrompt: string,
+          onToolCall: (name: string, input: Record<string, unknown>) => void,
+          maxToolCalls?: number,
+        ) => Promise<void>
+      }
+    ).runToolLoop(
+      [{ role: 'user', content: 'Find beam criteria' }],
+      'claude-haiku-4-5',
+      'Search system',
+      vi.fn(),
+      1,
+    )
+
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a non-throwing streamWithTools stub for Phase 3B', async () => {
+    const client = new AnthropicClient(() => 'test-key')
+    mockMessagesCreate.mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: 'Done' }],
+    })
+
+    const result = (
+      client as unknown as {
+        streamWithTools: (
+          messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+          tools: unknown[],
+          model: string,
+          systemPrompt: string,
+        ) => {
+          iterable: AsyncIterable<string>
+          abort(): void
+          finalMessage(): Promise<{ inputTokens: number; outputTokens: number }>
+          onToolCall(
+            cb: (call: {
+              id: string
+              name: string
+              input: Record<string, unknown>
+            }) => Promise<unknown>,
+          ): void
         }
-      ).streamWithTools([], [], 'claude-sonnet-4-6', 'System'),
-    ).toThrow('streamWithTools not implemented until Phase 3B')
+      }
+    ).streamWithTools([], [], 'claude-sonnet-4-6', 'System')
+
+    result.onToolCall(async () => undefined)
+    await expect(result.finalMessage()).resolves.toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+    })
   })
 })

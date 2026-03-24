@@ -4,7 +4,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { BrowserWindow } from 'electron'
 import type { ChatMessage, Conversation } from '../shared/ipc-types'
 import { IPC_CHANNELS } from '../shared/ipc-types'
+import type { GroundedAnswer } from '../shared/contracts/citation-contract'
 import type { LLMProvider, LLMStreamResult } from '../shared/contracts/llm-provider'
+import { runGroundedPipeline } from './groundedChatService'
 import { AnthropicClient } from './llmClient'
 
 interface PreferencesSnapshot {
@@ -35,6 +37,9 @@ interface MessageRow {
   model: string | null
   inputTokens: number | null
   outputTokens: number | null
+  mode: string | null
+  citations: string | null
+  groundedChunkCount: number | null
 }
 
 let db: Database.Database | null = null
@@ -48,6 +53,7 @@ let getAIConfigRef: () => AIConfigSnapshot = () => ({
 })
 let llmClient: LLMProvider | null = null
 let activeStream: LLMStreamResult | null = null
+let activeGroundedController: AbortController | null = null
 
 let stmtInsertConversation: Database.Statement
 let stmtListConversations: Database.Statement
@@ -60,6 +66,10 @@ let stmtCountUserMessages: Database.Statement
 let stmtUpdateConversationTitle: Database.Statement
 let stmtUpdateConversationModel: Database.Statement
 let stmtDeleteMessagesFrom: Database.Statement
+
+function isDuplicateColumnError(error: unknown): boolean {
+  return error instanceof Error && /duplicate column name/i.test(error.message)
+}
 
 const SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS conversations (
@@ -104,6 +114,8 @@ function mapConversation(row: ConversationRow): Conversation {
 }
 
 function mapMessage(row: MessageRow): ChatMessage {
+  const groundedAnswer = row.citations ? (JSON.parse(row.citations) as GroundedAnswer) : null
+
   return {
     id: row.id,
     conversationId: row.conversationId,
@@ -113,6 +125,10 @@ function mapMessage(row: MessageRow): ChatMessage {
     model: row.model ?? undefined,
     inputTokens: row.inputTokens ?? undefined,
     outputTokens: row.outputTokens ?? undefined,
+    mode: (row.mode as ChatMessage['mode']) ?? 'plain',
+    citations: groundedAnswer?.citations,
+    evidenceStatus: groundedAnswer?.evidenceStatus,
+    groundedChunkCount: row.groundedChunkCount ?? undefined,
   }
 }
 
@@ -145,6 +161,9 @@ async function runStream(
       model,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
+      mode: 'plain',
+      citations: null,
+      groundedChunkCount: null,
     })
     stmtUpdateConversationModel.run({
       id: conversationId,
@@ -180,6 +199,27 @@ export const chatService = {
     db.pragma('foreign_keys = ON')
     db.pragma('journal_mode = WAL')
     db.exec(SCHEMA_SQL)
+    try {
+      db.exec(`ALTER TABLE messages ADD COLUMN mode TEXT NOT NULL DEFAULT 'plain'`)
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        throw error
+      }
+    }
+    try {
+      db.exec(`ALTER TABLE messages ADD COLUMN citations TEXT`)
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        throw error
+      }
+    }
+    try {
+      db.exec(`ALTER TABLE messages ADD COLUMN grounded_chunk_count INTEGER`)
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) {
+        throw error
+      }
+    }
 
     mainWin = win
     getApiKeyRef = getApiKey
@@ -187,6 +227,7 @@ export const chatService = {
     getAIConfigRef = getAIConfig
     llmClient = new AnthropicClient(getApiKey)
     activeStream = null
+    activeGroundedController = null
 
     stmtInsertConversation = db.prepare(`
       INSERT INTO conversations (id, title, model, created_at, updated_at)
@@ -221,7 +262,10 @@ export const chatService = {
         created_at AS createdAt,
         model,
         input_tokens AS inputTokens,
-        output_tokens AS outputTokens
+        output_tokens AS outputTokens,
+        mode,
+        citations,
+        grounded_chunk_count AS groundedChunkCount
       FROM messages
       WHERE conversation_id = ?
       ORDER BY rowid ASC
@@ -237,7 +281,10 @@ export const chatService = {
         created_at,
         model,
         input_tokens,
-        output_tokens
+        output_tokens,
+        mode,
+        citations,
+        grounded_chunk_count
       ) VALUES (
         @id,
         @conversationId,
@@ -246,7 +293,10 @@ export const chatService = {
         @createdAt,
         @model,
         @inputTokens,
-        @outputTokens
+        @outputTokens,
+        @mode,
+        @citations,
+        @groundedChunkCount
       )
     `)
     stmtCountUserMessages = db.prepare(`
@@ -273,7 +323,9 @@ export const chatService = {
 
   close(): void {
     activeStream?.abort()
+    activeGroundedController?.abort()
     activeStream = null
+    activeGroundedController = null
     db?.close()
     db = null
     mainWin = null
@@ -348,6 +400,9 @@ export const chatService = {
       model: null,
       inputTokens: null,
       outputTokens: null,
+      mode: 'plain',
+      citations: null,
+      groundedChunkCount: null,
     })
 
     if (existingUserMessages.count === 0) {
@@ -378,8 +433,148 @@ export const chatService = {
     return { messageId: assistantMessageId }
   },
 
+  sendGrounded(
+    conversationId: string,
+    userContent: string,
+    model: string,
+    scopeSourceIds: string[],
+    projectFilters: string[],
+  ): { messageId: string } {
+    requireDb()
+
+    if (scopeSourceIds.length === 0) {
+      return this.send(conversationId, userContent, model)
+    }
+
+    if (!mainWin) {
+      throw new Error('Main window is not available')
+    }
+
+    const now = Date.now()
+    const assistantMessageId = randomUUID()
+    const userMessageId = randomUUID()
+    const existingUserMessages = stmtCountUserMessages.get(conversationId) as { count: number }
+
+    stmtInsertMessage.run({
+      id: userMessageId,
+      conversationId,
+      role: 'user',
+      content: userContent,
+      createdAt: now,
+      model: null,
+      inputTokens: null,
+      outputTokens: null,
+      mode: 'grounded',
+      citations: null,
+      groundedChunkCount: null,
+    })
+
+    if (existingUserMessages.count === 0) {
+      stmtUpdateConversationTitle.run({
+        id: conversationId,
+        title: deriveConversationTitle(userContent),
+        model,
+        updatedAt: now,
+      })
+    } else {
+      stmtUpdateConversationModel.run({
+        id: conversationId,
+        model,
+        updatedAt: now,
+      })
+    }
+
+    const conversationMessages = (
+      stmtGetConversationMessages.all(conversationId) as MessageRow[]
+    ).map((row) => ({
+      role: row.role as 'user' | 'assistant',
+      content: row.content,
+    }))
+
+    const controller = new AbortController()
+    activeGroundedController = controller
+
+    void runGroundedPipeline({
+      conversationId,
+      userContent,
+      model,
+      scopeSourceIds,
+      projectFilters,
+      assistantMessageId,
+      conversationMessages,
+      win: mainWin,
+      getApiKey: getApiKeyRef,
+      getAIConfig: getAIConfigRef,
+      getPreferences: getPreferencesRef,
+      signal: controller.signal,
+    })
+      .then((result) => {
+        const finalizedAt = Date.now()
+        const groundedAnswer =
+          result.mode === 'grounded'
+            ? JSON.stringify({
+                text: result.content,
+                citations: result.citations,
+                evidenceStatus: result.evidenceStatus,
+                retrievedChunkCount: result.chunkCount,
+                searchQueriesUsed: result.searchQueriesUsed,
+              } satisfies GroundedAnswer)
+            : null
+
+        stmtInsertMessage.run({
+          id: assistantMessageId,
+          conversationId,
+          role: 'assistant',
+          content: result.content,
+          createdAt: finalizedAt,
+          model,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          mode: result.mode,
+          citations: groundedAnswer,
+          groundedChunkCount: result.chunkCount,
+        })
+        stmtUpdateConversationModel.run({
+          id: conversationId,
+          model,
+          updatedAt: finalizedAt,
+        })
+
+        if (result.mode === 'grounded') {
+          mainWin?.webContents.send(IPC_CHANNELS.CHAT_GROUNDED_DONE, {
+            messageId: assistantMessageId,
+            citations: result.citations,
+            evidenceStatus: result.evidenceStatus,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            chunkCount: result.chunkCount,
+            finalText: result.content,
+          })
+        } else {
+          mainWin?.webContents.send(IPC_CHANNELS.CHAT_DONE, {
+            messageId: assistantMessageId,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+          })
+        }
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        mainWin?.webContents.send(IPC_CHANNELS.CHAT_ERROR, message)
+      })
+      .finally(() => {
+        if (activeGroundedController === controller) {
+          activeGroundedController = null
+        }
+      })
+
+    return { messageId: assistantMessageId }
+  },
+
   stop(): void {
     activeStream?.abort()
+    activeGroundedController?.abort()
+    activeGroundedController = null
   },
 
   async testConnection(): Promise<{ ok: boolean; error?: string }> {

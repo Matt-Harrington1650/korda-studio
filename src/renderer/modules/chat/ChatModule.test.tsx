@@ -1,12 +1,20 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import type { ChatMessage, Conversation, SendParams } from '../../../shared/ipc-types'
+import type {
+  ChatMessage,
+  Conversation,
+  GroundedDonePayload,
+  GroundedSendParams,
+  SendParams,
+} from '../../../shared/ipc-types'
 import ChatModule from './ChatModule'
 
 describe('ChatModule', () => {
   let conversations: Conversation[]
   let messagesByConversation: Record<string, ChatMessage[]>
   let tokenHandler: ((token: string) => void) | undefined
+  let searchingHandler: ((messageId: string) => void) | undefined
+  let groundedDoneHandler: ((payload: GroundedDonePayload) => void) | undefined
   let doneHandler:
     | ((data: { messageId: string; inputTokens: number; outputTokens: number }) => void)
     | undefined
@@ -45,8 +53,33 @@ describe('ChatModule', () => {
       conversation.model = model
       conversation.updatedAt = Date.now()
     }
-    messagesByConversation[conversationId] = [...(messagesByConversation[conversationId] ?? []), userMessage]
+    messagesByConversation[conversationId] = [
+      ...(messagesByConversation[conversationId] ?? []),
+      userMessage,
+    ]
     return { messageId: `assistant-${sendCount}` }
+  })
+  const chatSendGrounded = vi.fn(async ({ conversationId, content, model }: GroundedSendParams) => {
+    sendCount += 1
+    const userMessage: ChatMessage = {
+      id: `user-${sendCount}`,
+      conversationId,
+      role: 'user',
+      content,
+      createdAt: Date.now(),
+      mode: 'grounded',
+    }
+    const conversation = conversations.find((entry) => entry.id === conversationId)
+    if (conversation) {
+      conversation.title = content.replace(/\s+/g, ' ').trim().slice(0, 60) || 'New Conversation'
+      conversation.model = model
+      conversation.updatedAt = Date.now()
+    }
+    messagesByConversation[conversationId] = [
+      ...(messagesByConversation[conversationId] ?? []),
+      userMessage,
+    ]
+    return { messageId: `assistant-grounded-${sendCount}` }
   })
   const chatStop = vi.fn().mockResolvedValue(undefined)
   const chatConversationDelete = vi.fn(async (id: string) => {
@@ -82,6 +115,8 @@ describe('ChatModule', () => {
       'conv-1': [],
     }
     tokenHandler = undefined
+    searchingHandler = undefined
+    groundedDoneHandler = undefined
     doneHandler = undefined
     errorHandler = undefined
 
@@ -93,9 +128,20 @@ describe('ChatModule', () => {
       chatConversationRename,
       chatMessagesDeleteFrom,
       chatSend,
+      chatSendGrounded,
       chatStop,
       chatTestConnection: vi.fn().mockResolvedValue({ ok: true }),
       chatApiKeySource: vi.fn().mockResolvedValue('store'),
+      fileIndexSourcesList: vi.fn().mockResolvedValue([
+        {
+          id: 'src1',
+          displayName: 'Engineering Shares',
+          path: '/eng',
+          type: 'local',
+          enabled: true,
+        },
+      ]),
+      fileIndexProjectsList: vi.fn().mockResolvedValue(['Hospital Expansion']),
       onChatToken: vi.fn((cb: (token: string) => void) => {
         tokenHandler = cb
         return () => {}
@@ -106,6 +152,15 @@ describe('ChatModule', () => {
           return () => {}
         },
       ),
+      onChatSearching: vi.fn((cb: (messageId: string) => void) => {
+        searchingHandler = cb
+        return () => {}
+      }),
+      onChatCitation: vi.fn(() => () => {}),
+      onChatGroundedDone: vi.fn((cb: (payload: GroundedDonePayload) => void) => {
+        groundedDoneHandler = cb
+        return () => {}
+      }),
       onChatError: vi.fn((cb: (message: string) => void) => {
         errorHandler = cb
         return () => {}
@@ -267,14 +322,99 @@ describe('ChatModule', () => {
   it('shows inline stream errors', async () => {
     renderModule()
 
-    await waitFor(() =>
-      expect(window.kordaAPI.onChatError).toHaveBeenCalled(),
-    )
+    await waitFor(() => expect(window.kordaAPI.onChatError).toHaveBeenCalled())
 
     await act(async () => {
       errorHandler?.('Network error')
     })
 
     expect(await screen.findByText(/network error/i)).toBeInTheDocument()
+  })
+
+  it('routes to chatSendGrounded when scope sources are selected', async () => {
+    renderModule()
+
+    await waitFor(() => expect(chatConversationsList).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: /scope/i }))
+    fireEvent.click(await screen.findByLabelText('Engineering Shares'))
+    fireEvent.click(screen.getByRole('button', { name: /search these/i }))
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'fire rating corridor' },
+    })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+
+    await waitFor(() =>
+      expect(chatSendGrounded).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: 'fire rating corridor',
+          scopeSourceIds: ['src1'],
+        }),
+      ),
+    )
+    expect(chatSend).not.toHaveBeenCalled()
+  })
+
+  it('uses grounded completion events to replace streamed content with the stripped final text', async () => {
+    renderModule()
+
+    await waitFor(() => expect(chatConversationsList).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: /scope/i }))
+    fireEvent.click(await screen.findByLabelText('Engineering Shares'))
+    fireEvent.click(screen.getByRole('button', { name: /search these/i }))
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'fire rating corridor' },
+    })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+
+    await waitFor(() => expect(chatSendGrounded).toHaveBeenCalled())
+
+    await act(async () => {
+      searchingHandler?.('assistant-grounded-1')
+      tokenHandler?.('Draft answer <!--evidence:supported-->')
+    })
+
+    expect(screen.getByText(/draft answer/i)).toBeInTheDocument()
+
+    messagesByConversation['conv-1'] = [
+      {
+        id: 'user-1',
+        conversationId: 'conv-1',
+        role: 'user',
+        content: 'fire rating corridor',
+        createdAt: Date.now(),
+        mode: 'grounded',
+      },
+      {
+        id: 'assistant-grounded-1',
+        conversationId: 'conv-1',
+        role: 'assistant',
+        content: 'Draft answer',
+        createdAt: Date.now(),
+        mode: 'grounded',
+        evidenceStatus: 'supported',
+        groundedChunkCount: 1,
+        inputTokens: 12,
+        outputTokens: 34,
+      },
+    ]
+
+    await act(async () => {
+      groundedDoneHandler?.({
+        messageId: 'assistant-grounded-1',
+        citations: [],
+        evidenceStatus: 'supported',
+        inputTokens: 12,
+        outputTokens: 34,
+        chunkCount: 1,
+        finalText: 'Draft answer',
+      })
+    })
+
+    expect(await screen.findByText('Draft answer')).toBeInTheDocument()
+    expect(screen.queryByText(/evidence:supported/i)).not.toBeInTheDocument()
   })
 })

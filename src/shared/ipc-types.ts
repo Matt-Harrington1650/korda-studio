@@ -1,8 +1,10 @@
 import type { FileSource, SourceStatus } from './file-sources'
+import type { Citation, EvidenceStatus } from './contracts/citation-contract'
 import type { PipelineState } from './contracts/index-record'
 import type { ChunkRecord } from './contracts/chunk-record'
 import type { RetrievalParams, RetrievalResult } from './contracts/retrieval-contract'
 export type { FileSource, FileSourceType, SourceStatus } from './file-sources'
+export type { Citation, EvidenceStatus } from './contracts/citation-contract'
 export type { RetrievalParams, RetrievalResult } from './contracts/retrieval-contract'
 export type { ChunkRecord } from './contracts/chunk-record'
 export type { PipelineState } from './contracts/index-record'
@@ -88,12 +90,34 @@ export interface ChatMessage {
   model?: string
   inputTokens?: number
   outputTokens?: number
+  mode?: 'plain' | 'grounded' | 'grounded_fallback'
+  citations?: Citation[]
+  evidenceStatus?: EvidenceStatus
+  groundedChunkCount?: number
 }
 
 export interface SendParams {
   conversationId: string
   content: string
   model: string
+}
+
+export interface GroundedSendParams {
+  conversationId: string
+  content: string
+  model: string
+  scopeSourceIds: string[]
+  projectFilters: string[]
+}
+
+export interface GroundedDonePayload {
+  messageId: string
+  citations: Citation[]
+  evidenceStatus: EvidenceStatus
+  inputTokens: number
+  outputTokens: number
+  chunkCount: number
+  finalText: string
 }
 
 export interface KordaAPI {
@@ -129,6 +153,12 @@ export interface KordaAPI {
     cb: (data: { messageId: string; inputTokens: number; outputTokens: number }) => void,
   ) => () => void
   onChatError: (cb: (message: string) => void) => () => void
+  chatSendGrounded(params: GroundedSendParams): Promise<{ messageId: string }>
+  onChatSearching(cb: (messageId: string) => void): () => void
+  onChatCitation(
+    cb: (payload: { messageId: string; index: number; citation: Citation }) => void,
+  ): () => void
+  onChatGroundedDone(cb: (payload: GroundedDonePayload) => void): () => void
   fileIndexSourcesList: () => Promise<FileSource[]>
   fileIndexSourceSave: (source: FileSource) => Promise<void>
   fileIndexSourceDelete: (sourceId: string) => Promise<string | null>
@@ -162,6 +192,7 @@ export const IPC_CHANNELS = {
   FILE_INDEX_REINDEX: 'file-index:reindex',
   FILE_INDEX_PROGRESS: 'file-index:progress',
   CHAT_SEND: 'chat:send',
+  CHAT_SEND_GROUNDED: 'chat:send-grounded',
   CHAT_STOP: 'chat:stop',
   CHAT_CONVERSATIONS_LIST: 'chat:conversations:list',
   CHAT_CONVERSATION_GET: 'chat:conversation:get',
@@ -174,6 +205,9 @@ export const IPC_CHANNELS = {
   CHAT_TOKEN: 'chat:token',
   CHAT_DONE: 'chat:done',
   CHAT_ERROR: 'chat:error',
+  CHAT_SEARCHING: 'chat:searching',
+  CHAT_CITATION: 'chat:citation',
+  CHAT_GROUNDED_DONE: 'chat:grounded-done',
   FILE_INDEX_SOURCES_LIST: 'file-index:sources-list',
   FILE_INDEX_SOURCE_SAVE: 'file-index:source-save',
   FILE_INDEX_SOURCE_DELETE: 'file-index:source-delete',

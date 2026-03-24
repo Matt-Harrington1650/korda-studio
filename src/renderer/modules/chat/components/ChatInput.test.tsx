@@ -2,6 +2,13 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { ChatInput } from './ChatInput'
 
 describe('ChatInput', () => {
+  beforeEach(() => {
+    vi.stubGlobal('kordaAPI', {
+      fileIndexSourcesList: vi.fn().mockResolvedValue([]),
+      fileIndexProjectsList: vi.fn().mockResolvedValue([]),
+    })
+  })
+
   it('sends on Enter and not on Shift+Enter', () => {
     const onSend = vi.fn()
 
@@ -12,6 +19,10 @@ describe('ChatInput', () => {
         model="claude-sonnet-4-6"
         onDraftChange={vi.fn()}
         onModelChange={vi.fn()}
+        selectedSourceIds={[]}
+        selectedProjects={[]}
+        onSourcesChange={vi.fn()}
+        onProjectsChange={vi.fn()}
         onSend={onSend}
         onStop={vi.fn()}
       />,
@@ -34,6 +45,10 @@ describe('ChatInput', () => {
         model="claude-sonnet-4-6"
         onDraftChange={vi.fn()}
         onModelChange={vi.fn()}
+        selectedSourceIds={[]}
+        selectedProjects={[]}
+        onSourcesChange={vi.fn()}
+        onProjectsChange={vi.fn()}
         onSend={vi.fn()}
         onStop={onStop}
       />,
@@ -54,6 +69,10 @@ describe('ChatInput', () => {
         model="claude-sonnet-4-6"
         onDraftChange={vi.fn()}
         onModelChange={onModelChange}
+        selectedSourceIds={[]}
+        selectedProjects={[]}
+        onSourcesChange={vi.fn()}
+        onProjectsChange={vi.fn()}
         onSend={vi.fn()}
         onStop={vi.fn()}
       />,
@@ -65,5 +84,25 @@ describe('ChatInput', () => {
     })
 
     expect(onModelChange).toHaveBeenCalledWith('claude-opus-4-6')
+  })
+
+  it('shows the active scope count', () => {
+    render(
+      <ChatInput
+        draft=""
+        isStreaming={false}
+        model="claude-sonnet-4-6"
+        onDraftChange={vi.fn()}
+        onModelChange={vi.fn()}
+        selectedSourceIds={['src1']}
+        selectedProjects={['Hospital Expansion']}
+        onSourcesChange={vi.fn()}
+        onProjectsChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /scope/i })).toHaveTextContent('1 source')
   })
 })

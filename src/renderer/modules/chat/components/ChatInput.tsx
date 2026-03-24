@@ -1,19 +1,36 @@
 import { forwardRef, useEffect, useRef } from 'react'
 import { Send, Square } from 'lucide-react'
 import { CHAT_MODEL_OPTIONS, getModelCostHint } from '../chatModels'
+import { ScopeSelector } from './ScopeSelector'
 
 interface ChatInputProps {
   draft: string
   isStreaming: boolean
   model: string
+  selectedSourceIds: string[]
+  selectedProjects: string[]
   onDraftChange: (value: string) => void
   onModelChange: (model: string) => void
+  onSourcesChange: (sourceIds: string[]) => void
+  onProjectsChange: (projects: string[]) => void
   onSend: () => void
   onStop: () => void
 }
 
 export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(function ChatInput(
-  { draft, isStreaming, model, onDraftChange, onModelChange, onSend, onStop },
+  {
+    draft,
+    isStreaming,
+    model,
+    selectedSourceIds,
+    selectedProjects,
+    onDraftChange,
+    onModelChange,
+    onSourcesChange,
+    onProjectsChange,
+    onSend,
+    onStop,
+  },
   forwardedRef,
 ) {
   const localRef = useRef<HTMLTextAreaElement | null>(null)
@@ -72,8 +89,19 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(functio
         />
 
         <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="text-xs text-text-secondary">
-            {getModelCostHint(model)} model selected
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-text-secondary">
+              {getModelCostHint(model)} model selected
+            </div>
+            <ScopeSelector
+              selectedSourceIds={selectedSourceIds}
+              selectedProjects={selectedProjects}
+              onSourcesChange={onSourcesChange}
+              onProjectsChange={onProjectsChange}
+              onApply={() => {
+                localRef.current?.focus()
+              }}
+            />
           </div>
           {isStreaming ? (
             <button
