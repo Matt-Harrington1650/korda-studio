@@ -90,6 +90,7 @@
     "react-syntax-highlighter": "^16.1.1",
     "tailwindcss": "^4.2.1",
     "uuid": "^13.0.0",
+    "voyageai": "^0.2.1",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.11"
   }
