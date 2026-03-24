@@ -18,8 +18,16 @@ export async function sendChatMessage(
   await textarea.fill(message)
   await textarea.press('Enter')
 
-  // Wait for streaming to begin (Stop button appears)
-  await page.locator('[aria-label="Stop response"]').waitFor({ state: 'visible', timeout: 10_000 })
+  // Wait for streaming to begin (Stop button appears).
+  // Wrapped in try/catch: if the response is very fast, the Stop button may
+  // have already disappeared before this resolves — the stream-complete check below is the real gate.
+  try {
+    await page
+      .locator('[aria-label="Stop response"]')
+      .waitFor({ state: 'visible', timeout: 10_000 })
+  } catch {
+    // Response arrived before Stop button was observed — proceed to stream-complete check
+  }
 
   // Wait for streaming to complete (Send button reappears)
   await waitForStreamComplete(page, streamTimeoutMs)

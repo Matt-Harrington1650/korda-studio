@@ -10,15 +10,19 @@ export async function waitForEmbeddingReady(
   let lastStats: EmbeddingStats | null = null
 
   while (Date.now() < deadline) {
-    const stats = await page.evaluate(() =>
-      (
-        window as unknown as { kordaAPI: { getEmbeddingStats(): Promise<EmbeddingStats> } }
-      ).kordaAPI.getEmbeddingStats(),
-    )
-    lastStats = stats
+    try {
+      const stats = await page.evaluate(() =>
+        (
+          window as unknown as { kordaAPI: { getEmbeddingStats(): Promise<EmbeddingStats> } }
+        ).kordaAPI.getEmbeddingStats(),
+      )
+      lastStats = stats
 
-    if (stats.isReady) {
-      return stats
+      if (stats.isReady) {
+        return stats
+      }
+    } catch {
+      // kordaAPI not yet exposed — retry on next tick
     }
 
     await new Promise<void>((resolve) => setTimeout(resolve, 2_000))

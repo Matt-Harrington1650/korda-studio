@@ -17,16 +17,17 @@ export async function getCitationsFromLastMessage(page: Page): Promise<ParsedCit
   const lastToggle = toggleButtons.nth(count - 1)
   const ariaLabel = await lastToggle.getAttribute('aria-label')
 
+  // The citation panel root is the direct parent of the toggle button
+  const panel = lastToggle.locator('..')
+  const rows = panel.locator('.rounded-xl.border.border-border.bg-surface-raised\\/60')
+
   // Expand if not already open
   if (ariaLabel === 'Show sources') {
     await lastToggle.click()
-    // Wait for panel content to render
-    await page.waitForTimeout(300)
+    // Wait for the first citation row to appear (condition-based, not a fixed sleep)
+    await rows.first().waitFor({ state: 'visible', timeout: 5_000 })
   }
 
-  // The citation panel is the ancestor container; citations are children
-  const panel = lastToggle.locator('..').locator('..')
-  const rows = panel.locator('.rounded-xl.border.border-border.bg-surface-raised\\/60')
   const rowCount = await rows.count()
 
   const citations: ParsedCitation[] = []
@@ -34,9 +35,8 @@ export async function getCitationsFromLastMessage(page: Page): Promise<ParsedCit
     const row = rows.nth(i)
     // fileName is in the .truncate div
     const fileName = (await row.locator('.truncate').textContent()) ?? ''
-    // excerpt is in the second text div (after meta)
-    const allText = await row.locator('.text-sm.text-text-primary').allTextContents()
-    const excerpt = allText.find((t) => t !== fileName) ?? ''
+    // excerpt uses the mt-2 variant of text-sm text-text-primary (distinct from the fileName div)
+    const excerpt = (await row.locator('.mt-2.text-sm.text-text-primary').textContent()) ?? ''
     citations.push({ fileName: fileName.trim(), excerpt: excerpt.trim() })
   }
 
