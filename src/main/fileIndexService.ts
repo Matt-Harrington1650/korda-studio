@@ -194,6 +194,11 @@ function runMigrations(): void {
       UNIQUE(file_id, chunk_index)
     )
   `)
+  try {
+    db.exec(`ALTER TABLE chunks ADD COLUMN embedding_model TEXT`)
+  } catch {
+    // Column already exists.
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_file_id ON chunks(file_id)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_source_id ON chunks(source_id)`)
   db.exec(`
