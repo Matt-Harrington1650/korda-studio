@@ -136,6 +136,7 @@ test.describe('Keyword Mode @expensive', () => {
   test.beforeEach(async () => {
     await configureAISettings(handle.page, { retrievalMode: 'keyword' })
     await handle.page.click('a[href="/chat"]')
+    await handle.page.waitForSelector('[aria-label="Message input"]', { timeout: 10_000 })
   })
 
   test('keyword query returns citation with correct N-value fact', async () => {
@@ -167,6 +168,7 @@ test.describe('Hybrid Mode @expensive', () => {
   test.beforeEach(async () => {
     await configureAISettings(handle.page, { retrievalMode: 'auto' })
     await handle.page.click('a[href="/chat"]')
+    await handle.page.waitForSelector('[aria-label="Message input"]', { timeout: 10_000 })
   })
 
   test('semantic bearing-capacity query returns 120 kPa fact', async () => {
@@ -193,6 +195,6 @@ test.describe('Hybrid Mode @expensive', () => {
     const { page } = handle
     const { text } = await sendChatMessage(page, 'Summarise the foundation options and their risks')
     expect(text).toMatch(/piles?|14\s*m/i)
-    expect(text).toMatch(/120|bearing capacity/i)
+    expect(text).toMatch(/120\s*kPa|bearing capacity/i)
   })
 })
