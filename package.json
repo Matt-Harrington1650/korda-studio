@@ -21,7 +21,10 @@
     "test:coverage": "vitest run --coverage",
     "pretest:e2e": "electron-rebuild -v 41.0.2 --force",
     "test:e2e": "playwright test",
-    "posttest:e2e": "npm rebuild better-sqlite3"
+    "posttest:e2e": "npm rebuild better-sqlite3",
+    "pretest:e2e:full": "electron-rebuild -v 41.0.2 --force",
+    "test:e2e:full": "cross-env playwright test e2e/ragPipeline.spec.ts",
+    "posttest:e2e:full": "npm rebuild better-sqlite3"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -60,13 +63,16 @@
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^10.0.0",
+    "cross-env": "^10.1.0",
     "electron": "41.0.2",
     "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
     "jsdom": "^29.0.0",
     "lint-staged": "^16.4.0",
+    "pdf-lib": "^1.17.1",
     "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.0",
     "vite": "^5.4.21",
