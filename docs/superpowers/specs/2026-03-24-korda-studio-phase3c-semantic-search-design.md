@@ -113,20 +113,13 @@ export interface EmbeddingStats {
   total: number
   percent: number // 0–100, rounded integer
   isReady: boolean // true when embedded === total && total > 0
+  hasProvider: boolean // true when at least one embedding API key is configured
 }
 ```
 
 ### 3.2 Updates to `src/shared/contracts/retrieval-contract.ts`
 
-Add method to existing `RetrievalProvider`:
-
-```typescript
-export interface RetrievalProvider {
-  search(params: RetrievalParams): Promise<RetrievalResult[]>
-  isVectorReady(): boolean
-  getEmbeddingStats(): EmbeddingStats // NEW
-}
-```
+No change to `RetrievalProvider` interface — `getEmbeddingStats()` is NOT added here. The IPC handler in `main.ts` calls `embeddingLoop.getStats()` directly; `retrievalService` has no reference to the loop and does not need this method.
 
 `RetrievalMode` already defined as `'keyword' | 'vector' | 'hybrid'`. Add `'auto'` variant:
 
@@ -143,7 +136,7 @@ export interface AIConfig {
   cohereApiKey?: string // already exists
   contextualEnrichment?: boolean // already exists
   useReranking?: boolean // NEW: gate Cohere rerank pass (default: false)
-  retrievalMode?: RetrievalMode // NEW: default 'auto'
+  retrievalMode?: 'keyword' | 'vector' | 'hybrid' | 'auto' // NEW: default 'auto' — inlined to avoid cross-module import
 }
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
@@ -180,17 +173,17 @@ getEmbeddingStats(): Promise<EmbeddingStats>
 ### 4.1 `src/main/voyageEmbeddingProvider.ts`
 
 ```typescript
-import Voyage from 'voyageai'
+import { VoyageAIClient } from 'voyageai'
 
 export class VoyageEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions = 1024
   readonly modelId = 'voyage-3'
   readonly maxBatchSize = 96
 
-  private client: Voyage
+  private client: VoyageAIClient
 
   constructor(apiKey: string) {
-    this.client = new Voyage({ apiKey })
+    this.client = new VoyageAIClient({ apiKey })
   }
 
   async embed(texts: string[], inputType: EmbeddingInputType): Promise<number[][]> {
@@ -200,7 +193,8 @@ export class VoyageEmbeddingProvider implements EmbeddingProvider {
       input: texts,
       inputType: voyageInputType,
     })
-    return response.data.map((d) => d.embedding)
+    // response.data and d.embedding are both optional in the SDK types
+    return (response.data ?? []).map((d) => d.embedding ?? [])
   }
 }
 ```
@@ -232,7 +226,9 @@ export class CohereEmbeddingProvider implements EmbeddingProvider, RerankerProvi
       inputType: cohereInputType,
       embeddingTypes: ['float'],
     })
-    return (response.embeddings as { float: number[][] }).float
+    // When embeddingTypes: ['float'], response is EmbeddingsByType shape
+    const byType = response as { embeddings: { float?: number[][] } }
+    return byType.embeddings.float ?? []
   }
 
   async rerank(query: string, documents: string[], topN: number): Promise<RerankResult[]> {
@@ -345,6 +341,9 @@ export class EmbeddingLoop {
   ) {}
 
   init(): void {
+    // Idempotent: destroy existing timer before creating a new one
+    // Called on startup AND whenever AIConfig changes (new API key entered)
+    this.destroy()
     this.timer = setInterval(() => this.tick(), 10_000)
     // Run immediately on init
     setImmediate(() => this.tick())
@@ -379,6 +378,7 @@ export class EmbeddingLoop {
       total: t,
       percent: t > 0 ? Math.round((e / t) * 100) : 0,
       isReady: t > 0 && e === t,
+      hasProvider: Boolean(this.getProviders().embedder),
     }
   }
 
@@ -837,7 +837,7 @@ No other toolRegistry changes needed — `retrievalService.search()` handles mod
 
 | File                                                                  | Change                                                                                               |
 | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `src/shared/contracts/retrieval-contract.ts`                          | Add `'auto'` to `RetrievalMode`; add `getEmbeddingStats()` to `RetrievalProvider`                    |
+| `src/shared/contracts/retrieval-contract.ts`                          | Add `'auto'` to `RetrievalMode` union                                                                |
 | `src/shared/ai-config.ts`                                             | Add `useReranking`, `retrievalMode` fields                                                           |
 | `src/shared/ipc-types.ts`                                             | `EmbeddingProgressPayload`, new channels, `KordaAPI` extensions                                      |
 | `src/main/retrievalService.ts`                                        | Vector search, hybrid search, RRF, rerank, query embedding cache, `resolveMode()`, `isVectorReady()` |
