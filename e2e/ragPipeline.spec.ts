@@ -22,6 +22,9 @@ test.beforeAll(async () => {
   handle = await launchApp()
   const { page } = handle
 
+  // Wait for the renderer to be fully ready before navigating
+  await page.waitForSelector('a[href="/settings"]', { timeout: 10_000 })
+
   // 1. Configure file server root (Settings → Connections)
   await page.click('a[href="/settings"]')
   await page.getByText('Connections').click()
@@ -42,13 +45,17 @@ test.beforeAll(async () => {
   })
 
   // 3. Navigate to Chat and activate grounded mode with PROJ-003 scope
+  // Navigate to Chat and wait for scope button to be ready
   await page.click('a[href="/chat"]')
-  await page.waitForTimeout(500)
+  await page.waitForSelector('[aria-label="Scope"]', { timeout: 10_000 })
 
   // Open scope selector
   await page.click('[aria-label="Scope"]')
   await page.waitForSelector('[aria-label="Scope options"]', { timeout: 5_000 })
-  await page.waitForTimeout(1_000) // let sources/projects load
+  // Wait for at least one source checkbox to appear before checking
+  await page.waitForSelector('[aria-label="Scope options"] section input[type="checkbox"]', {
+    timeout: 10_000,
+  })
 
   // Check all sources (grounded mode requires at least one source selected)
   const sourceCheckboxes = page
@@ -69,11 +76,15 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   if (handle) {
-    // Reset to defaults
-    await configureAISettings(handle.page, {
-      retrievalMode: 'auto',
-      useReranking: false,
-    })
+    try {
+      // Reset to defaults
+      await configureAISettings(handle.page, {
+        retrievalMode: 'auto',
+        useReranking: false,
+      })
+    } catch {
+      // Cleanup errors should not mask the original test failure
+    }
     await closeApp(handle)
   }
 })
@@ -94,14 +105,21 @@ test.describe('Embedding Pipeline @expensive', () => {
 
   test('embedding stats: hasProvider is true', async () => {
     const { page } = handle
-    const stats = await page.evaluate(() =>
-      (
-        window as unknown as {
-          kordaAPI: { getEmbeddingStats(): Promise<EmbeddingStats> }
-        }
-      ).kordaAPI.getEmbeddingStats(),
-    )
-    expect(stats.hasProvider).toBe(true)
+    await expect
+      .poll(
+        async () => {
+          const stats = await page.evaluate(() =>
+            (
+              window as unknown as {
+                kordaAPI: { getEmbeddingStats(): Promise<EmbeddingStats> }
+              }
+            ).kordaAPI.getEmbeddingStats(),
+          )
+          return stats.hasProvider
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true)
   })
 
   test('all chunks reach isReady (percent = 100)', async () => {
