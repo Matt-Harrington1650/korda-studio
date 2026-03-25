@@ -6,4 +6,10 @@ export default defineConfig({
   reporter: 'list',
   globalSetup: './e2e/globalSetup.ts',
   workers: 1,
+  webServer: {
+    command: 'vite --config vite.renderer.config.mts',
+    url: 'http://localhost:5173',
+    reuseExistingServer: true,
+    timeout: 60_000,
+  },
 })
