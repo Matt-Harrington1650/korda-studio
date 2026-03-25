@@ -198,3 +198,39 @@ test.describe('Hybrid Mode @expensive', () => {
     expect(text).toMatch(/120\s*kPa|bearing capacity/i)
   })
 })
+
+// ─── Reranking Toggle ─────────────────────────────────────────────────────────
+test.describe('Reranking Toggle @expensive', () => {
+  test.beforeEach(async () => {
+    await configureAISettings(handle.page, { retrievalMode: 'auto', useReranking: true })
+    await handle.page.click('a[href="/chat"]')
+    await handle.page.waitForSelector('[aria-label="Message input"]', { timeout: 10_000 })
+  })
+
+  test.afterEach(async () => {
+    // Reset reranking off after each test to avoid state bleed
+    await configureAISettings(handle.page, { useReranking: false })
+  })
+
+  test('reranking does not break semantic retrieval — bearing capacity citation still present', async () => {
+    const { page } = handle
+    const { text, citations } = await sendChatMessage(
+      page,
+      'What load can the soil safely support?',
+    )
+    expect(citations.length).toBeGreaterThan(0)
+    expect(citations[0].fileName).toContain('Riverfront_Plaza')
+    expect(text).toMatch(/120\s*kPa|bearing capacity.*120|120.*allowable/i)
+  })
+
+  test('reranking does not break keyword retrieval — SPT N-value fact still returned', async () => {
+    const { page } = handle
+    const { text, citations } = await sendChatMessage(
+      page,
+      'What is the SPT N-value in the fill layer?',
+    )
+    expect(citations.length).toBeGreaterThan(0)
+    expect(citations[0].fileName).toContain('Riverfront_Plaza')
+    expect(text).toMatch(/3.*8|N.?value.*fill|fill.*N.?value/i)
+  })
+})
