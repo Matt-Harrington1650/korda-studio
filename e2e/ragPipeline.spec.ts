@@ -15,6 +15,10 @@ test.skip(
   'Skipped: set VOYAGE_API_KEY + ANTHROPIC_API_KEY to run RAG pipeline tests',
 )
 
+// Extend timeout for all tests and hooks in this file — Electron cold start
+// takes well over 10 s and beforeAll/afterAll would otherwise hit the 30 s config limit.
+test.setTimeout(120_000)
+
 // ─── Shared state ────────────────────────────────────────────────────────────
 let handle: AppHandle
 
@@ -22,8 +26,9 @@ test.beforeAll(async () => {
   handle = await launchApp()
   const { page } = handle
 
-  // Wait for the renderer to be fully ready before navigating
-  await page.waitForSelector('a[href="/settings"]', { timeout: 10_000 })
+  // Wait for the renderer to be fully ready before navigating.
+  // Electron cold start can exceed 10 s — use a generous 60 s timeout.
+  await page.waitForSelector('a[href="/settings"]', { timeout: 60_000 })
 
   // 1. Configure file server root (Settings → Connections)
   await page.click('a[href="/settings"]')
