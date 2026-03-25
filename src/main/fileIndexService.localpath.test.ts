@@ -77,7 +77,7 @@ describe('fileIndexService — local path crawl (real fs)', () => {
   it('finds a report', async () => {
     await fileIndexService.crawlSource(SOURCE_ID)
     // Filter by project to avoid matching PROJ-003's Riverfront_Plaza_Geotech_Report.pdf
-    const results = fileIndexService.search({ query: 'Geotech', project: 'PROJ-001' })
+    const results = fileIndexService.search({ query: 'Geotech', project: 'PROJ-002' })
     expect(results).toHaveLength(1)
     expect(results[0].name).toBe('Geotech_Report_Final.pdf')
     expect(results[0].docType).toBe('report')
