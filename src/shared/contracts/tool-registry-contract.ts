@@ -8,6 +8,8 @@ export interface ToolRegistry {
   collectResults(): RetrievalResult[]
   reset(): void
   setScope(scope: { sourceIds: string[]; projects: string[] }): void
+  setRetrievalMode(mode: 'keyword' | 'vector' | 'hybrid' | 'auto'): void
+  getRetrievalMode(): 'keyword' | 'vector' | 'hybrid' | 'auto'
 }
 
 export interface AnthropicToolSchema {

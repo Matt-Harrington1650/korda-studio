@@ -17,10 +17,45 @@ test.skip(
 
 // Extend timeout for all tests and hooks in this file — Electron cold start
 // takes well over 10 s and beforeAll/afterAll would otherwise hit the 30 s config limit.
-test.setTimeout(120_000)
+// 300 s covers the full beforeAll: app launch (60 s) + ingestion wait (≤90 s) + setup.
+// Describe blocks override this per-test with their own test.setTimeout(120_000).
+test.setTimeout(300_000)
 
 // ─── Shared state ────────────────────────────────────────────────────────────
 let handle: AppHandle
+
+// ─── Chat helpers ─────────────────────────────────────────────────────────────
+// ChatModule stores selectedSourceIds in React state — it resets to [] every
+// time the component unmounts (i.e. whenever we navigate away from /chat).
+// Call this before every test that uses sendChatMessage to ensure grounded mode
+// is active with all available sources.
+async function navigateToChatWithScope(): Promise<void> {
+  const { page } = handle
+  await page.click('a[href="/chat"]')
+  // Start a fresh conversation so prior test messages don't pollute the context
+  await page.waitForSelector('button:has-text("New Chat")', { timeout: 10_000 })
+  await page.click('button:has-text("New Chat")')
+  await page.waitForSelector('[aria-label="Message input"]', { timeout: 10_000 })
+
+  // Scope resets on every ChatModule mount — re-select all sources each time
+  await page.click('[aria-label="Scope"]')
+  await page.waitForSelector('[aria-label="Scope options"]', { timeout: 5_000 })
+  await page.waitForSelector('[aria-label="Scope options"] section input[type="checkbox"]', {
+    timeout: 10_000,
+  })
+  const sourceCheckboxes = page
+    .locator('[aria-label="Scope options"] section')
+    .first()
+    .locator('input[type="checkbox"]')
+  const sourceCount = await sourceCheckboxes.count()
+  for (let i = 0; i < sourceCount; i++) {
+    const cb = sourceCheckboxes.nth(i)
+    if (!(await cb.isChecked())) {
+      await cb.check()
+    }
+  }
+  await page.click('button:has-text("Search these")')
+}
 
 test.beforeAll(async () => {
   handle = await launchApp()
@@ -34,50 +69,108 @@ test.beforeAll(async () => {
   // 1. Configure file server root (Settings → Connections)
   await page.click('a[href="/settings"]')
   await page.getByText('Connections').click()
-  await page.waitForSelector('text=File Server', { timeout: 5_000 })
-  const rootInput = page.locator('#root-path')
-  await rootInput.fill('')
-  await rootInput.fill(TEST_DATA_ROOT)
-  await page.click('button:has-text("Save")')
-  await page.waitForSelector('text=✓ Saved', { timeout: 5_000 })
-  await page.waitForSelector('text=Indexing started', { timeout: 5_000 })
+  await page.waitForSelector('button:has-text("+ Add Source")', { timeout: 5_000 })
 
-  // 2. Configure AI settings (Voyage + Anthropic keys, auto mode)
+  // IPC types for this setup block
+  interface SourceEntry {
+    id: string
+    path: string
+  }
+  interface IngestionStatusEntry {
+    new: number
+    queued: number
+    extracting: number
+    chunking: number
+    contextualizing: number
+    indexed: number
+    failed: number
+  }
+  type KordaWindow = {
+    kordaAPI: {
+      fileIndexSourcesList(): Promise<SourceEntry[]>
+      fileIndexReindex(id?: string): Promise<void>
+      fileIndexSourceDelete(id: string): Promise<string | null>
+      ingestionRetry(sourceId?: string): Promise<void>
+      ingestionStatus(sourceId?: string): Promise<IngestionStatusEntry>
+    }
+  }
+
+  const getSources = (): Promise<SourceEntry[]> =>
+    page.evaluate(() => (window as unknown as KordaWindow).kordaAPI.fileIndexSourcesList())
+
+  const sourcesNow = await getSources()
+  const matchingSources = sourcesNow.filter((s) => s.path === TEST_DATA_ROOT)
+
+  // Delete duplicate sources (accumulated from previous test runs) — keeping at most one.
+  // deleteSourceData removes their chunks/files so old data doesn't pollute getEmbeddingStats().
+  // Retry up to 3× in case a source is mid-crawl when we try to delete it.
+  for (const dup of matchingSources.slice(1)) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const err = await page.evaluate(
+        (id) => (window as unknown as KordaWindow).kordaAPI.fileIndexSourceDelete(id),
+        dup.id,
+      )
+      if (!err) break
+      await page.waitForTimeout(2_000)
+    }
+  }
+
+  // Add the source if none exists yet
+  if (matchingSources.length === 0) {
+    await page.click('button:has-text("+ Add Source")')
+    await page.getByPlaceholder('Main Server').fill('Test Data')
+    await page.locator('input[placeholder*="SERVER"]').fill(TEST_DATA_ROOT)
+    await page.click('button:has-text("Save")')
+    await page.waitForSelector('text=Source saved', { timeout: 5_000 })
+  }
+
+  // Get the single remaining source
+  const sourcesAfter = await getSources()
+  const targetSource = sourcesAfter.find((s) => s.path === TEST_DATA_ROOT)
+
+  if (targetSource) {
+    // Full reindex: wipe stale chunks/files and re-crawl.
+    // fileIndexReindex is fire-and-forget on the main process side, so we must
+    // explicitly wait for ingestion to complete before proceeding to chat tests.
+    // Without this wait, getEmbeddingStats() (used in test 3) can satisfy
+    // itself on old embedded chunks while new uuid-source chunks are still
+    // being ingested — causing tests 4+ to see citations=0.
+    await page.evaluate(
+      (id) => (window as unknown as KordaWindow).kordaAPI.fileIndexReindex(id),
+      targetSource.id,
+    )
+
+    // Poll until this source's files are fully ingested (no pending pipeline states).
+    // We poll from the test runner (not inside page.evaluate) to avoid hitting
+    // Playwright's page.evaluate timeout on slow ingestion runs.
+    const ingestionDeadline = Date.now() + 90_000
+    while (Date.now() < ingestionDeadline) {
+      await page.evaluate(
+        (id) => (window as unknown as KordaWindow).kordaAPI.ingestionRetry(id),
+        targetSource.id,
+      )
+      const status = await page.evaluate(
+        (id) => (window as unknown as KordaWindow).kordaAPI.ingestionStatus(id),
+        targetSource.id,
+      )
+      const pending =
+        status.new + status.queued + status.extracting + status.chunking + status.contextualizing
+      if (pending === 0 && status.indexed > 0) break
+      await page.waitForTimeout(2_000)
+    }
+  }
+
+  // 2. Configure AI settings via IPC (no page navigation — keeps us on
+  //    Connections so we can navigate to Chat in step 3 with scope intact).
+  //    Anthropic key is from env var; only Voyage needs to be set here.
   await configureAISettings(page, {
     voyageApiKey: process.env.VOYAGE_API_KEY!,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
     retrievalMode: 'auto',
     useReranking: false,
   })
 
-  // 3. Navigate to Chat and activate grounded mode with PROJ-003 scope
-  // Navigate to Chat and wait for scope button to be ready
-  await page.click('a[href="/chat"]')
-  await page.waitForSelector('[aria-label="Scope"]', { timeout: 10_000 })
-
-  // Open scope selector
-  await page.click('[aria-label="Scope"]')
-  await page.waitForSelector('[aria-label="Scope options"]', { timeout: 5_000 })
-  // Wait for at least one source checkbox to appear before checking
-  await page.waitForSelector('[aria-label="Scope options"] section input[type="checkbox"]', {
-    timeout: 10_000,
-  })
-
-  // Check all sources (grounded mode requires at least one source selected)
-  const sourceCheckboxes = page
-    .locator('[aria-label="Scope options"] section')
-    .first()
-    .locator('input[type="checkbox"]')
-  const sourceCount = await sourceCheckboxes.count()
-  for (let i = 0; i < sourceCount; i++) {
-    const cb = sourceCheckboxes.nth(i)
-    if (!(await cb.isChecked())) {
-      await cb.check()
-    }
-  }
-
-  // Click "Search these" to apply and close the panel
-  await page.click('button:has-text("Search these")')
+  // 3. Navigate to Chat and activate grounded mode (all available sources)
+  await navigateToChatWithScope()
 })
 
 test.afterAll(async () => {
@@ -141,10 +234,13 @@ test.describe('Embedding Pipeline @expensive', () => {
 
 // ─── Keyword Mode ─────────────────────────────────────────────────────────────
 test.describe('Keyword Mode @expensive', () => {
+  // configureAISettings now uses storeSet IPC — no page navigation, so the
+  // chat scope (grounded sources) set in beforeAll is preserved.
+  test.setTimeout(120_000)
+
   test.beforeEach(async () => {
     await configureAISettings(handle.page, { retrievalMode: 'keyword' })
-    await handle.page.click('a[href="/chat"]')
-    await handle.page.waitForSelector('[aria-label="Message input"]', { timeout: 10_000 })
+    await navigateToChatWithScope()
   })
 
   test('keyword query returns citation with correct N-value fact', async () => {
@@ -152,6 +248,7 @@ test.describe('Keyword Mode @expensive', () => {
     const { text, citations } = await sendChatMessage(
       page,
       'What is the SPT N-value in the fill layer?',
+      60_000,
     )
     expect(citations.length).toBeGreaterThan(0)
     expect(citations[0].fileName).toContain('Riverfront_Plaza')
@@ -163,6 +260,7 @@ test.describe('Keyword Mode @expensive', () => {
     const { text, citations } = await sendChatMessage(
       page,
       'What load can the soil safely support?',
+      60_000,
     )
     const hasStrongCitation = citations.some((c) => c.fileName.includes('Riverfront_Plaza'))
     const hasKeyFact = /120\s*kPa/i.test(text)
@@ -173,10 +271,11 @@ test.describe('Keyword Mode @expensive', () => {
 
 // ─── Hybrid Mode ──────────────────────────────────────────────────────────────
 test.describe('Hybrid Mode @expensive', () => {
+  test.setTimeout(120_000)
+
   test.beforeEach(async () => {
     await configureAISettings(handle.page, { retrievalMode: 'auto' })
-    await handle.page.click('a[href="/chat"]')
-    await handle.page.waitForSelector('[aria-label="Message input"]', { timeout: 10_000 })
+    await navigateToChatWithScope()
   })
 
   test('semantic bearing-capacity query returns 120 kPa fact', async () => {
@@ -184,6 +283,7 @@ test.describe('Hybrid Mode @expensive', () => {
     const { text, citations } = await sendChatMessage(
       page,
       'What load can the soil safely support?',
+      60_000,
     )
     expect(citations.length).toBeGreaterThan(0)
     expect(citations[0].fileName).toContain('Riverfront_Plaza')
@@ -195,13 +295,18 @@ test.describe('Hybrid Mode @expensive', () => {
     const { text } = await sendChatMessage(
       page,
       'Is the site at risk of ground movement during an earthquake?',
+      60_000,
     )
     expect(text).toMatch(/liquefaction|0\.18g|seismic amplification/i)
   })
 
   test('synthesis query spans both foundation and seismic sections', async () => {
     const { page } = handle
-    const { text } = await sendChatMessage(page, 'Summarise the foundation options and their risks')
+    const { text } = await sendChatMessage(
+      page,
+      'Summarise the foundation options and their risks',
+      60_000,
+    )
     expect(text).toMatch(/piles?|14\s*m/i)
     expect(text).toMatch(/120\s*kPa|bearing capacity/i)
   })
@@ -209,15 +314,15 @@ test.describe('Hybrid Mode @expensive', () => {
 
 // ─── Reranking Toggle ─────────────────────────────────────────────────────────
 test.describe('Reranking Toggle @expensive', () => {
+  test.setTimeout(120_000)
+
   test.beforeEach(async () => {
     await configureAISettings(handle.page, { retrievalMode: 'auto', useReranking: true })
-    await handle.page.click('a[href="/chat"]')
-    await handle.page.waitForSelector('[aria-label="Message input"]', { timeout: 10_000 })
+    await navigateToChatWithScope()
   })
 
   test.afterEach(async () => {
     // Reset reranking off after each test to avoid state bleed
-    // Wrapped in try/catch so cleanup errors don't fail a passing test
     try {
       await configureAISettings(handle.page, { useReranking: false, retrievalMode: 'auto' })
     } catch {
@@ -230,6 +335,7 @@ test.describe('Reranking Toggle @expensive', () => {
     const { text, citations } = await sendChatMessage(
       page,
       'What load can the soil safely support?',
+      60_000,
     )
     expect(citations.length).toBeGreaterThan(0)
     expect(citations[0].fileName).toContain('Riverfront_Plaza')
@@ -241,6 +347,7 @@ test.describe('Reranking Toggle @expensive', () => {
     const { text, citations } = await sendChatMessage(
       page,
       'What is the SPT N-value in the fill layer?',
+      60_000,
     )
     expect(citations.length).toBeGreaterThan(0)
     expect(citations[0].fileName).toContain('Riverfront_Plaza')

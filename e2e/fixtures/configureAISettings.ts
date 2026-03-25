@@ -7,31 +7,27 @@ export interface AITestSettings {
   useReranking?: boolean
 }
 
+type StoreAPI = {
+  storeGet<T>(key: string): Promise<T | null>
+  storeSet(key: string, value: unknown): Promise<void>
+}
+type Win = { kordaAPI: StoreAPI }
+
+/**
+ * Patches AI settings via electron-store IPC without navigating away from the
+ * current page.  This is critical for chat tests: navigating to /settings/ai
+ * unmounts ChatModule which resets the grounded-mode scope to empty.
+ */
 export async function configureAISettings(page: Page, settings: AITestSettings): Promise<void> {
-  // Navigate to Settings → AI
-  await page.click('a[href="/settings"]')
-  await page.getByText('AI', { exact: true }).click()
+  const current = await page.evaluate(() =>
+    (window as unknown as Win).kordaAPI.storeGet<Record<string, unknown>>('ai'),
+  )
 
-  if (settings.voyageApiKey !== undefined) {
-    await page.locator('#voyage-api-key').fill(settings.voyageApiKey)
-  }
+  const next: Record<string, unknown> = { ...(current ?? {}) }
+  if (settings.voyageApiKey !== undefined) next.voyageApiKey = settings.voyageApiKey
+  if (settings.anthropicApiKey !== undefined) next.anthropicApiKey = settings.anthropicApiKey
+  if (settings.retrievalMode !== undefined) next.retrievalMode = settings.retrievalMode
+  if (settings.useReranking !== undefined) next.useReranking = settings.useReranking
 
-  if (settings.anthropicApiKey !== undefined) {
-    await page.locator('#anthropic-api-key').fill(settings.anthropicApiKey)
-  }
-
-  if (settings.retrievalMode !== undefined) {
-    await page.locator(`input[name="retrievalMode"][value="${settings.retrievalMode}"]`).check()
-  }
-
-  if (settings.useReranking !== undefined) {
-    const checkbox = page.locator('#use-reranking')
-    const checked = await checkbox.isChecked()
-    if (settings.useReranking !== checked) {
-      await checkbox.click()
-    }
-  }
-
-  await page.click('button:has-text("Save AI Settings")')
-  await page.waitForSelector('text=AI settings saved.', { timeout: 5_000 })
+  await page.evaluate((config) => (window as unknown as Win).kordaAPI.storeSet('ai', config), next)
 }

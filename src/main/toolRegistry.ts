@@ -18,6 +18,7 @@ export class ToolRegistryImpl implements ToolRegistry {
   private readonly tools = new Map<string, AgentTool>()
   private readonly collectedResults: RetrievalResult[] = []
   private currentScope: ToolScope = { sourceIds: [], projects: [] }
+  private currentRetrievalMode: 'keyword' | 'vector' | 'hybrid' | 'auto' = 'auto'
 
   register(tool: AgentTool): void {
     this.tools.set(tool.name, tool)
@@ -68,6 +69,7 @@ export class ToolRegistryImpl implements ToolRegistry {
   reset(): void {
     this.collectedResults.length = 0
     this.currentScope = { sourceIds: [], projects: [] }
+    this.currentRetrievalMode = 'auto'
   }
 
   setScope(scope: ToolScope): void {
@@ -75,6 +77,14 @@ export class ToolRegistryImpl implements ToolRegistry {
       sourceIds: [...scope.sourceIds],
       projects: [...scope.projects],
     }
+  }
+
+  setRetrievalMode(mode: 'keyword' | 'vector' | 'hybrid' | 'auto'): void {
+    this.currentRetrievalMode = mode
+  }
+
+  getRetrievalMode(): 'keyword' | 'vector' | 'hybrid' | 'auto' {
+    return this.currentRetrievalMode
   }
 
   getScope(): ToolScope {
@@ -140,7 +150,7 @@ export const searchKnowledgeBaseTool: AgentTool = {
           sourceId: combo.sourceId,
           project: combo.project,
           limit,
-          mode: 'auto',
+          mode: toolRegistry.getRetrievalMode(),
         })
         scopedResults.push(...results)
       }

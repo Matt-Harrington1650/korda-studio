@@ -16,6 +16,7 @@ interface AIConfigSnapshot {
   provider: 'anthropic'
   defaultModel: string
   firmContext: string
+  retrievalMode?: 'keyword' | 'vector' | 'hybrid' | 'auto'
 }
 
 interface RunGroundedPipelineParams {
@@ -208,6 +209,7 @@ export async function runGroundedPipeline(
 
   toolRegistry.reset()
   toolRegistry.setScope({ sourceIds: scopeSourceIds, projects: projectFilters })
+  toolRegistry.setRetrievalMode(aiConfig.retrievalMode ?? 'auto')
   win.webContents.send(IPC_CHANNELS.CHAT_SEARCHING, assistantMessageId)
 
   await toolLoopClient.runToolLoop(

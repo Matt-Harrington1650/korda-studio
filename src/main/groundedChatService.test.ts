@@ -11,6 +11,7 @@ const {
   mockCollectResults,
   mockReset,
   mockSetScope,
+  mockSetRetrievalMode,
 } = vi.hoisted(() => ({
   mockMessagesCreate: vi.fn(),
   mockMessagesStream: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockCollectResults: vi.fn(),
   mockReset: vi.fn(),
   mockSetScope: vi.fn(),
+  mockSetRetrievalMode: vi.fn(),
 }))
 
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -44,6 +46,7 @@ vi.mock('./toolRegistry', () => ({
     reset: mockReset,
     setScope: mockSetScope,
     collectResults: mockCollectResults,
+    setRetrievalMode: mockSetRetrievalMode,
   },
 }))
 

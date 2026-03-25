@@ -18,6 +18,7 @@ interface AIConfigSnapshot {
   provider: 'anthropic'
   defaultModel: string
   firmContext: string
+  retrievalMode?: 'keyword' | 'vector' | 'hybrid' | 'auto'
 }
 
 interface ConversationRow {
