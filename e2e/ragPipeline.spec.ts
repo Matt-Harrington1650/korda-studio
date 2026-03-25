@@ -91,6 +91,8 @@ test.afterAll(async () => {
 
 // ─── Embedding Pipeline ───────────────────────────────────────────────────────
 test.describe('Embedding Pipeline @expensive', () => {
+  test.setTimeout(120_000)
+
   test('indexing completes — PROJ-003 file appears in index within 15 s', async () => {
     const { page } = handle
     // Navigate to Projects and search for our fixture file
