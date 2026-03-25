@@ -209,7 +209,12 @@ test.describe('Reranking Toggle @expensive', () => {
 
   test.afterEach(async () => {
     // Reset reranking off after each test to avoid state bleed
-    await configureAISettings(handle.page, { useReranking: false })
+    // Wrapped in try/catch so cleanup errors don't fail a passing test
+    try {
+      await configureAISettings(handle.page, { useReranking: false, retrievalMode: 'auto' })
+    } catch {
+      // Cleanup failure should not mask the test result
+    }
   })
 
   test('reranking does not break semantic retrieval — bearing capacity citation still present', async () => {
