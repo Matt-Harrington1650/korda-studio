@@ -49,7 +49,7 @@ describe('fileIndexService — local path crawl (real fs)', () => {
     const statuses = fileIndexService.getStatus()
     const status = statuses.find((s) => s.sourceId === SOURCE_ID)!
     expect(status.status).toBe('idle')
-    expect(status.fileCount).toBe(4) // 4 files across 2 project folders
+    expect(status.fileCount).toBe(5) // 5 files across 3 project folders (PROJ-003 added by RAG fixture)
     expect(status.lastCrawledMs).not.toBeNull()
     expect(status.path).toBe(LOCAL_ROOT)
   })
@@ -76,7 +76,8 @@ describe('fileIndexService — local path crawl (real fs)', () => {
 
   it('finds a report', async () => {
     await fileIndexService.crawlSource(SOURCE_ID)
-    const results = fileIndexService.search({ query: 'Geotech' })
+    // Filter by project to avoid matching PROJ-003's Riverfront_Plaza_Geotech_Report.pdf
+    const results = fileIndexService.search({ query: 'Geotech', project: 'PROJ-001' })
     expect(results).toHaveLength(1)
     expect(results[0].name).toBe('Geotech_Report_Final.pdf')
     expect(results[0].docType).toBe('report')
