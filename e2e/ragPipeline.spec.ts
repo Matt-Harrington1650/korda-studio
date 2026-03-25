@@ -26,9 +26,10 @@ test.beforeAll(async () => {
   handle = await launchApp()
   const { page } = handle
 
-  // Wait for the renderer to be fully ready before navigating.
-  // Electron cold start can exceed 10 s — use a generous 60 s timeout.
-  await page.waitForSelector('a[href="/settings"]', { timeout: 60_000 })
+  // Wait for the sidebar nav to mount — this is the correct ready signal used
+  // by the existing happyPath.spec.ts tests. The sidebar renders as soon as
+  // the Shell component mounts, before any module lazy-loads complete.
+  await page.waitForSelector('[aria-label="Module navigation"]', { timeout: 60_000 })
 
   // 1. Configure file server root (Settings → Connections)
   await page.click('a[href="/settings"]')
