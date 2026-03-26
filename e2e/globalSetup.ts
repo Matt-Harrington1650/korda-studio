@@ -12,10 +12,9 @@ export default function globalSetup(): void {
     )
   }
 
-  // pdfjs-dist (used by pdf-parse inside the ingestion worker) tries to load
-  // pdf.worker.mjs relative to ingestionWorker.js at runtime.  The Vite build
-  // does not copy this file automatically, so we ensure it is present before
-  // every test run.
+  // pdfjs-dist loads pdf.worker.mjs relative to ingestionWorker.js at runtime.
+  // The vite.worker.config.ts build plugin copies it automatically, but if a
+  // developer runs e2e tests without a fresh npm start we still ensure it's present.
   const workerDest = path.join(buildDir, 'pdf.worker.mjs')
   if (!fs.existsSync(workerDest)) {
     const workerSrc = path.resolve(__dirname, '../node_modules/pdfjs-dist/build/pdf.worker.mjs')
@@ -25,6 +24,6 @@ export default function globalSetup(): void {
       )
     }
     fs.copyFileSync(workerSrc, workerDest)
-    console.log(`[globalSetup] Copied pdf.worker.mjs → ${workerDest}`)
+    console.log(`[globalSetup] Copied pdf.worker.mjs → ${workerDest} (fallback)`)
   }
 }
