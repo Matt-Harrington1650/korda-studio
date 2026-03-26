@@ -196,7 +196,7 @@ describe('AnthropicClient', () => {
         max_tokens: 1024,
         model: 'claude-haiku-4-5',
         system: 'Search system',
-        tool_choice: { type: 'auto' },
+        tool_choice: { type: 'any' },
         tools: mockToolRegistry.getSchemas(),
         messages: [{ role: 'user', content: 'Find beam criteria' }],
       }),

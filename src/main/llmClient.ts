@@ -82,7 +82,10 @@ export class AnthropicClient implements LLMProvider {
           max_tokens: 1024,
           system: systemPrompt,
           tools: toolRegistry.getSchemas(),
-          tool_choice: { type: 'auto' },
+          // Force at least one tool call on the first iteration so the model
+          // always searches before answering, even for queries it could answer
+          // from training data (e.g. "What is the SPT N-value in the fill layer?").
+          tool_choice: toolCallCount === 0 ? { type: 'any' } : { type: 'auto' },
           messages: anthropicMessages.map((message) => ({
             role: message.role,
             content: message.content,

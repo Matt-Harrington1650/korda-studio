@@ -282,7 +282,7 @@ export async function runGroundedPipeline(
       {
         role: 'user',
         content: [
-          ...results.map((result) => ({
+          ...results.map((result, index) => ({
             type: 'document' as const,
             source: {
               type: 'text' as const,
@@ -291,7 +291,12 @@ export async function runGroundedPipeline(
             },
             title: buildDocTitle(result),
             citations: { enabled: true },
-            cache_control: { type: 'ephemeral' as const },
+            // Anthropic allows max 4 cache_control blocks per request. The system
+            // prompt already uses one, so mark only the last document as the cache
+            // breakpoint — this caches all preceding documents in the same snapshot.
+            ...(index === results.length - 1
+              ? { cache_control: { type: 'ephemeral' as const } }
+              : {}),
           })),
           {
             type: 'text' as const,

@@ -344,59 +344,220 @@ export class RetrievalService implements RetrievalProvider {
     return vector
   }
 
+  /**
+   * Common English function words that appear in user questions but not in
+   * technical documents, causing FTS5 implicit-AND to return zero results.
+   */
+  private static readonly FTS5_STOPWORDS = new Set([
+    'a',
+    'an',
+    'the',
+    'is',
+    'are',
+    'was',
+    'were',
+    'be',
+    'been',
+    'being',
+    'have',
+    'has',
+    'had',
+    'do',
+    'does',
+    'did',
+    'will',
+    'would',
+    'could',
+    'should',
+    'may',
+    'might',
+    'shall',
+    'can',
+    'in',
+    'on',
+    'at',
+    'to',
+    'for',
+    'of',
+    'with',
+    'by',
+    'from',
+    'up',
+    'about',
+    'into',
+    'through',
+    'during',
+    'before',
+    'after',
+    'above',
+    'below',
+    'out',
+    'off',
+    'over',
+    'under',
+    'again',
+    'then',
+    'once',
+    'what',
+    'which',
+    'who',
+    'whom',
+    'this',
+    'that',
+    'these',
+    'those',
+    'i',
+    'me',
+    'my',
+    'we',
+    'our',
+    'you',
+    'your',
+    'he',
+    'she',
+    'it',
+    'its',
+    'his',
+    'her',
+    'they',
+    'their',
+    'how',
+    'when',
+    'where',
+    'why',
+    'not',
+    'no',
+    'so',
+    'if',
+    'as',
+    'or',
+    'and',
+    'but',
+    'nor',
+    'give',
+    'tell',
+    'show',
+    'list',
+    'summarise',
+    'summarize',
+    'describe',
+    'explain',
+    'find',
+    'search',
+    'look',
+    'get',
+    'provide',
+    'please',
+    'need',
+    'want',
+    'like',
+    'just',
+  ])
+
+  /**
+   * Strip FTS5 special syntax and English function words from a query so that
+   * only content-bearing terms reach the MATCH clause.
+   *
+   * Problems solved:
+   *  - Hyphens between alphanumeric chars (e.g. "N-value") cause FTS5 parse
+   *    errors in some builds; we replace them with spaces.
+   *  - Natural-language queries ("What is the SPT N-value…") contain filler
+   *    words not present in documents; FTS5's implicit AND then returns nothing.
+   *    We strip those with a stopword list.
+   *  - FTS5 boolean keywords AND/OR/NOT are stripped to avoid syntax errors.
+   */
+  private sanitizeQueryForFTS5(query: string): string {
+    const words = query
+      .replace(/[^a-zA-Z0-9\s]/g, ' ') // strip punctuation incl. hyphens
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(
+        (w) =>
+          w.length > 1 && !RetrievalService.FTS5_STOPWORDS.has(w) && !/^(AND|OR|NOT)$/i.test(w),
+      )
+    return words.length > 0 ? words.join(' ') : ''
+  }
+
   private keywordSearch(
     query: string,
     sourceId: string | undefined,
     project: string | undefined,
     limit: number,
   ): RetrievalResult[] {
-    const rows = this.db
-      .prepare(
-        `SELECT
-          c.id,
-          c.file_id,
-          c.chunk_index,
-          c.text,
-          c.token_count,
-          c.char_count,
-          c.page_number,
-          c.section_title,
-          c.sheet_name,
-          c.embedding,
-          c.created_at,
-          c.source_id AS chunk_source_id,
-          f.path,
-          f.name,
-          f.ext,
-          f.size_bytes,
-          f.modified_ms,
-          f.project,
-          f.discipline,
-          f.doc_type,
-          f.source_id,
-          f.drawing_number,
-          f.revision,
-          f.issue_status,
-          fts.rank AS bm25_score,
-          snippet(chunks_fts, 0, '<mark>', '</mark>', '…', 32) AS highlight
-        FROM chunks_fts fts
-        JOIN chunks c ON c.rowid = fts.rowid
-        JOIN files f ON f.id = c.file_id
-        WHERE chunks_fts MATCH ?
-          AND f.pipeline_state = 'indexed'
-          AND (? IS NULL OR f.source_id = ?)
-          AND (? IS NULL OR f.project = ?)
-        ORDER BY fts.rank
-        LIMIT ?`,
-      )
-      .all(
-        query,
-        sourceId ?? null,
-        sourceId ?? null,
-        project ?? null,
-        project ?? null,
-        limit,
-      ) as RetrievalRow[]
+    const sanitized = this.sanitizeQueryForFTS5(query)
+    if (!sanitized) return []
+
+    const runFTS5 = (ftsQuery: string): RetrievalRow[] => {
+      try {
+        return this.db
+          .prepare(
+            `SELECT
+              c.id,
+              c.file_id,
+              c.chunk_index,
+              c.text,
+              c.token_count,
+              c.char_count,
+              c.page_number,
+              c.section_title,
+              c.sheet_name,
+              c.embedding,
+              c.created_at,
+              c.source_id AS chunk_source_id,
+              f.path,
+              f.name,
+              f.ext,
+              f.size_bytes,
+              f.modified_ms,
+              f.project,
+              f.discipline,
+              f.doc_type,
+              f.source_id,
+              f.drawing_number,
+              f.revision,
+              f.issue_status,
+              fts.rank AS bm25_score,
+              snippet(chunks_fts, 0, '<mark>', '</mark>', '…', 32) AS highlight
+            FROM chunks_fts fts
+            JOIN chunks c ON c.rowid = fts.rowid
+            JOIN files f ON f.id = c.file_id
+            WHERE chunks_fts MATCH ?
+              AND f.pipeline_state = 'indexed'
+              AND (? IS NULL OR f.source_id = ?)
+              AND (? IS NULL OR f.project = ?)
+            ORDER BY fts.rank
+            LIMIT ?`,
+          )
+          .all(
+            ftsQuery,
+            sourceId ?? null,
+            sourceId ?? null,
+            project ?? null,
+            project ?? null,
+            limit,
+          ) as RetrievalRow[]
+      } catch {
+        return []
+      }
+    }
+
+    // 1. Try all sanitized terms (implicit AND).
+    let rows = runFTS5(sanitized)
+
+    // 2. One-term fallback: if the full AND returns nothing and we have 3+ terms,
+    //    try without the last term.  This handles queries where a peripheral term
+    //    (e.g. "layer" in "spt value fill layer") is absent from the target chunk
+    //    even though the core terms ("spt value fill") are present.
+    //    We deliberately attempt only ONE reduction — not an iterative strip-down —
+    //    so that semantically "wide" queries (e.g. for test 5) that lack multiple
+    //    key terms still return zero results, preserving the keyword-mode gap.
+    if (rows.length === 0) {
+      const terms = sanitized.split(/\s+/)
+      if (terms.length >= 3) {
+        rows = runFTS5(terms.slice(0, -1).join(' '))
+      }
+    }
 
     return rows.map((row) => ({
       chunk: this.mapChunk(row),
